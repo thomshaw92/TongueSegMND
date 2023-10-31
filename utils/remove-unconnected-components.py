@@ -3,19 +3,27 @@ import numpy as np
 import argparse
 import nibabel as nib
 from scipy.ndimage import label, sum
-
+import matplotlib.pyplot as plt
 def get_largest_component(img, label_num):
     binary_img = np.where(img == label_num, 1, 0)
     labeled_array, num_features = label(binary_img)
 
     if num_features < 1:
         return binary_img
-    
+
     component_sizes = sum(binary_img, labeled_array, range(num_features + 1))
-    largest_component_label = np.argmax(component_sizes)
-    largest_component_img = np.where(labeled_array == largest_component_label, label_num, 0)
-    
+    largest_components_labels = component_sizes.argsort()[-2:][::-1]
+
+    largest_component_img = np.zeros_like(binary_img)
+
+    if len(largest_components_labels) > 1 and component_sizes[largest_components_labels[0]] * 0.55 <= component_sizes[largest_components_labels[1]]:
+        print(f"Label {label_num} has two large components with sizes {component_sizes[largest_components_labels[0]]} and {component_sizes[largest_components_labels[1]]} voxels. Keeping both.")
+        largest_component_img = np.where((labeled_array == largest_components_labels[0]) | (labeled_array == largest_components_labels[1]), label_num, 0)
+    else:
+        largest_component_img = np.where(labeled_array == largest_components_labels[0], label_num, 0)
+
     return largest_component_img
+
 
 def process_image(img, labels):
     unique_labels = np.unique(img)
