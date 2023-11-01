@@ -3,12 +3,15 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Read the CSV file
-df = pd.read_csv('/winmounts/uqtshaw/data.cai.uq.edu.au/TONGUESEG-Q5346/data/final_analysis_labels/results.csv')
+df = pd.read_csv('/mnt/r/TONGUESEG-Q5346/code/TongueSegMND/volume_curv_stats_extraction/results.csv')
 
 # Drop rows with missing values
 df = df.dropna()
 
-metrics = ['Volume', 'Intensity']
+# Filter the dataframe to include only labels 1-4
+df = df[df['Label'].isin([1, 2, 3, 4])]
+
+metrics = ['Volume']
 
 # Plot histograms of each metric per dataset and label
 for metric in metrics:
