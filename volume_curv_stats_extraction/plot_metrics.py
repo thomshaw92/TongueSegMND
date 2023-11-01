@@ -3,7 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Read the CSV file
-df = pd.read_csv('/winmounts/uqtshaw/data.cai.uq.edu.au/TONGUESEG-Q5346/code/TongueSegMND/volume_curv_stats_extraction/results.csv')
+df = pd.read_csv('/mnt/r/TONGUESEG-Q5346/code/TongueSegMND/volume_curv_stats_extraction/results.csv')
 
 # Drop rows with missing values
 df = df.dropna()
