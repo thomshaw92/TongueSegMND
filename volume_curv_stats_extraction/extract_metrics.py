@@ -58,9 +58,9 @@ def extract_volumes_from_int_labels(dataset_path, dataset_name):
 
 
 # Paths
-belong_path = '/mnt/r/TONGUESEG-Q5346/data/final_analysis_labelled_data/BeLong'
-sydney_path = '/mnt/r/TONGUESEG-Q5346/data/final_analysis_labelled_data/Sydney'
-eatt_path = '/mnt/r/TONGUESEG-Q5346/data/final_analysis_labelled_data/EATT'
+belong_path = '/Volumes/TONGUESEG-Q5346/data/final_analysis_labelled_data/BeLong'
+sydney_path = '/Volumes/TONGUESEG-Q5346/data/final_analysis_labelled_data/Sydney'
+eatt_path = '/Volumes/TONGUESEG-Q5346/data/final_analysis_labelled_data/EATT'
 
 # Convert labels to integer type
 convert_labels_to_int(sydney_path)
@@ -75,4 +75,4 @@ eatt_metrics = extract_volumes_from_int_labels(eatt_path, 'EATT')
 # Consolidate and save results
 df = pd.concat([belong_metrics, sydney_metrics, eatt_metrics])
 df.sort_values(['Dataset', 'Subject_ID', 'Session_ID', 'Modality', 'Label'], inplace=True)
-df.to_csv('/mnt/r/TONGUESEG-Q5346/code/TongueSegMND/volume_curv_stats_extraction/results.csv', index=False)
+df.to_csv('/Volumes/TONGUESEG-Q5346/code/TongueSegMND/volume_curv_stats_extraction/results.csv', index=False)
