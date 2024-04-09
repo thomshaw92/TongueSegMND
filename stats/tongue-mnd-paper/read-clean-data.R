@@ -15,8 +15,18 @@ file_path <- file.path(data_dir, file_name)
 df <- read_excel(file_path)
 # Step 2: Rename columns to be more R-friendly (avoid spaces and special characters)
 colnames(df) <- make.names(colnames(df))
-# Recode 0s to 9s in formal_diagnosis_numeric
+
+#Re-code 0s to 9s in formal_diagnosis_numeric
+
 df$formal_diagnosis_numeric <- recode(df$formal_diagnosis_numeric, `0` = 9)
+
+# List of IDs to exclude due to poor seg or missing ALSFRS-R (NB this is ifferent from seg paper)
+exclude_ids <- c(9, 61, 126, 7, 63, 116, 21, 72, 149, 84, 121, 22, 129, 15, 133, 135,
+                 138, 161, 168, 176, 182, 185, 186, 193, 198, 200, 201, 103)
+
+# Filter out the data
+df <- df %>% 
+  filter(!(`segmentation.id` %in% exclude_ids))
 
 # Recode formal_diagnosis_numeric to have more descriptive labels
 df$formal_diagnosis_numeric <- factor(
@@ -32,28 +42,6 @@ print(table(df$formal_diagnosis_numeric))
 tongue_volume_columns <- c("Trans.vol.cor.IOC", "SLong.vol.cor.IOC", "Genio.vol.cor.IOC", "ILong.vol.cor.IOC")
 
 
-# Function to remove outliers based on the IQR method
-remove_outliers <- function(x, multiplier = 1.5) {
-  # Calculate the first and third quartiles
-  Q1 <- quantile(x, 0.25, na.rm = TRUE)
-  Q3 <- quantile(x, 0.75, na.rm = TRUE)
-  # Interquartile range calculation
-  IQR <- Q3 - Q1
-  # Determine bounds for identifying outliers
-  lower_bound <- Q1 - multiplier * IQR
-  upper_bound <- Q3 + multiplier * IQR
-  # Replace outliers with NA
-  x[!(x >= lower_bound & x <= upper_bound)] <- NA
-  return(x)
-}
-
-# Apply the outlier removal function to control subjects
-controls <- df %>% filter(formal_diagnosis == "Control")
-for (col in tongue_volume_columns) {
-  controls[[col]] <- remove_outliers(controls[[col]])
-}
-library(DescTools)
-
 # Function to winsorize a vector at the 1st and 99th percentiles
 winsorize_at_percentiles <- function(x, lower_perc = 0.01, upper_perc = 0.99) {
   lower_bound <- quantile(x, lower_perc, na.rm = TRUE)
@@ -61,61 +49,12 @@ winsorize_at_percentiles <- function(x, lower_perc = 0.01, upper_perc = 0.99) {
   Winsorize(x, probs = c(lower_perc, upper_perc), na.rm = TRUE)
 }
 
-# Apply the winsorize function to patient data for each tongue volume column
-patients <- df %>% 
-  filter(formal_diagnosis != "Control") %>%
+# Apply the winsorize function to  data for each tongue volume column
+controls <- df %>% 
+  filter(formal_diagnosis == "Control") %>%
   mutate(across(all_of(tongue_volume_columns), ~winsorize_at_percentiles(.)))
 
-
 # Combine the cleaned data from controls and patients
-df_clean <- bind_rows(controls, patients)
-
-# Function to clean data based on standard deviation cutoff
-clean_data_by_sd <- function(x, sd_cutoff = 2) {
-  mean_value <- mean(x, na.rm = TRUE)
-  sd_value <- sd(x, na.rm = TRUE)
-  cutoff_low <- mean_value - (sd_cutoff * sd_value)
-  cutoff_high <- mean_value + (sd_cutoff * sd_value)
-  x <- ifelse(x < cutoff_low | x > cutoff_high, NA, x)
-  return(x)
-}
-
-# Process controls with IQR-based outlier removal
-controls <- df_clean %>%
-  filter(formal_diagnosis == "Control") %>%
-  mutate(across(all_of(tongue_volume_columns), remove_outliers))
-
-# Apply standard deviation cutoff for ALS group across all tongue volume columns
-als_patients <- patients %>%
-  filter(formal_diagnosis_numeric == "ALS") %>%
-  mutate(across(all_of(tongue_volume_columns), clean_data_by_sd, sd_cutoff = 2))
-
-# Combine the processed controls and ALS patients
-df_clean <- bind_rows(controls, als_patients)
-
-
-# Additional processing for controls (multivariate outlier detection)
-cov_matrix <- cov(controls[, tongue_volume_columns], use = "complete.obs")
-center <- colMeans(controls[, tongue_volume_columns], na.rm = TRUE)
-controls$md <- mahalanobis(controls[, tongue_volume_columns], center = center, cov = cov_matrix)
-threshold <- qchisq(0.95, df = ncol(controls[, tongue_volume_columns]))
-controls$outlier <- controls$md > threshold
-
-# Update df_clean with the additional controls processing
-df_clean <- bind_rows(controls, als_patients)
-
-
-
-# Perform multivariate outlier detection on control data
-cov_matrix <- cov(controls[, tongue_volume_columns], use = "complete.obs")
-center <- colMeans(controls[, tongue_volume_columns], na.rm = TRUE)
-controls$md <- mahalanobis(controls[, tongue_volume_columns], center = center, cov = cov_matrix)
-
-# Set a threshold for flagging multivariate outliers
-threshold <- qchisq(0.95, df = ncol(controls[, tongue_volume_columns]))
-controls$outlier <- controls$md > threshold
-
-# Update the clean dataset with the outlier information for controls
 df_clean <- bind_rows(controls, patients)
 
 # Normality checks for the cleaned tongue volume data
@@ -160,8 +99,6 @@ for (col in tongue_volume_columns) {
     print(paste(col, "in ALS patients does not appear to be normally distributed (p-value:", shapiro_test_als$p.value, ")"))
   }
 }
-
-
 
 # Function to create and save both histogram and QQ plot for a given dataset and column
 plot_and_save <- function(data, col_name, file_path) {
@@ -219,7 +156,6 @@ visualize_data <- function(data, col_name, plots_directory) {
 for (col in tongue_volume_columns) {
   visualize_data(df_clean, col, plots_directory)
 }
-
 
 # Save the cleaned dataframe to an   RDS file for future use
 saveRDS(df_clean, file.path(data_dir, "df_clean.rds"))
