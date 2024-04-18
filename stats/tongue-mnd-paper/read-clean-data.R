@@ -49,10 +49,16 @@ winsorize_at_percentiles <- function(x, lower_perc = 0.01, upper_perc = 0.99) {
   Winsorize(x, probs = c(lower_perc, upper_perc), na.rm = TRUE)
 }
 
+
 # Apply the winsorize function to  data for each tongue volume column
 controls <- df %>% 
   filter(formal_diagnosis == "Control") %>%
   mutate(across(all_of(tongue_volume_columns), ~winsorize_at_percentiles(.)))
+# Apply the winsorize function to data for each tongue volume column
+patients <- df %>% 
+  filter(formal_diagnosis != "Control") %>% # Assuming "Control" is the only non-patient category
+  mutate(across(all_of(tongue_volume_columns), ~winsorize_at_percentiles(.)))
+
 
 # Combine the cleaned data from controls and patients
 df_clean <- bind_rows(controls, patients)
