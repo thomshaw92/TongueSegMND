@@ -74,7 +74,27 @@ p_interactive <- ggplotly(p, tooltip = "text")
 p_interactive
 
 ######
-#MANOVA
+#PERMANOVA for non-parametric multivariate analysis
+# Load necessary library
+library(vegan)
+
+# Assuming 'data_filtered_complete_cases' is your dataset
+# Make sure the diagnostic variable is a factor
+data_filtered_complete_cases$formal_diagnosis_numeric <- as.factor(data_filtered_complete_cases$formal_diagnosis_numeric)
+
+# Select relevant columns for the PERMANOVA analysis
+df_for_analysis <- data_filtered_complete_cases[, c("SLong.vol.cor.IOC", "Genio.vol.cor.IOC", "ILong.vol.cor.IOC", "Trans.vol.cor.IOC", "formal_diagnosis_numeric")]
+
+# Conducting PERMANOVA
+# Euclidean distance is commonly used, but you can choose other distance measures depending on your data structure
+permanova_results <- adonis(df_for_analysis[,1:4] ~ formal_diagnosis_numeric, data = df_for_analysis, method = "euclidean")
+
+# Print the results
+print(permanova_results)
+
+
+######
+#ANOVA
 # Ensure the diagnosis variable is a factor
 data_filtered_complete_cases$formal_diagnosis_numeric <- as.factor(data_filtered_complete_cases$formal_diagnosis_numeric)
 
@@ -290,164 +310,3 @@ for (muscle in muscle_volumes) {
 ##have a look at bulbar onset patients
 
 
-############within-case
-
-
-#Regression Analysis
-
-# Filter out control participants and prepare the data
-case_data <- df_clean %>%
-  filter(formal_diagnosis_numeric != "Control") %>%
-  filter(SLong.vol.cor.IOC > 0, Genio.vol.cor.IOC > 0, ILong.vol.cor.IOC > 0, Trans.vol.cor.IOC > 0) %>%
-  select(months_since_onset, SLong.vol.cor.IOC, Genio.vol.cor.IOC, ILong.vol.cor.IOC, Trans.vol.cor.IOC)
-
-# Define the muscle volumes to analyze
-muscle_volumes <- c("SLong.vol.cor.IOC", "Genio.vol.cor.IOC", "ILong.vol.cor.IOC", "Trans.vol.cor.IOC")
-
-# Initialize a list to store regression results
-regression_results <- list()
-
-# Perform regression for each muscle volume
-for (muscle in muscle_volumes) {
-  formula <- as.formula(paste(muscle, "~ months_since_onset"))
-  model <- lm(formula, data = case_data)
-  regression_results[[muscle]] <- summary(model)
-  
-  # Print the summary of the regression model
-  print(paste("Regression results for", muscle))
-  print(summary(model))
-  
-  # Plot the regression line and data points
-  plot_title <- paste(muscle, "vs. Months Since Onset")
-  p <- ggplot(case_data, aes_string(x = "months_since_onset", y = muscle)) +
-    geom_point() +
-    geom_smooth(method = "lm", col = "blue") +
-    labs(title = plot_title, x = "Months Since Onset", y = muscle)
-  print(p)
-}
-
-# Access individual regression results like this, e.g., for SLong.vol.cor.IOC
-regression_results[["SLong.vol.cor.IOC"]]
-regression_results[["Genio.vol.cor.IOC"]]
-regression_results[["ILong.vol.cor.IOC"]]
-regression_results[["Trans.vol.cor.IOC"]]
-
-
-#all of em
-
-# Add a new column for the total volume
-case_data <- case_data %>%
-  mutate(Total.vol.cor.IOC = SLong.vol.cor.IOC + Genio.vol.cor.IOC + ILong.vol.cor.IOC + Trans.vol.cor.IOC)
-
-# Perform linear regression on total volume against months since onset
-total_volume_model <- lm(Total.vol.cor.IOC ~ months_since_onset, data = case_data)
-summary(total_volume_model)
-
-# Print the summary of the regression model
-print("Regression results for Total Tongue Volume")
-print(summary(total_volume_model))
-
-# Plot the regression line and data points for total volume
-ggplot(case_data, aes(x = months_since_onset, y = Total.vol.cor.IOC)) +
-  geom_point() +
-  geom_smooth(method = "lm", color = "blue") +
-  labs(title = "Total Tongue Volume vs. Months Since Onset",
-       x = "Months Since Onset", y = "Total Volume (cor IOC)")
-
-#####
-### regression analysis with ratio volumes instead?
-####
-# Filter out control participants and prepare the data
-case_data <- df_clean %>%
-  filter(formal_diagnosis_numeric != "Control") %>%
-  filter(SLong.vol > 0, Genio.vol > 0, ILong.vol > 0, Trans.vol > 0) %>%
-  select(months_since_onset, SLong.vol, Genio.vol, ILong.vol, Trans.vol)
-
-# Calculate the total volume and each muscle's volume ratio to total volume
-case_data <- case_data %>%
-  mutate(Total.vol = SLong.vol + Genio.vol + ILong.vol + Trans.vol,
-         SLong.vol.ratio = SLong.vol / Total.vol,
-         Genio.vol.ratio = Genio.vol / Total.vol,
-         ILong.vol.ratio = ILong.vol / Total.vol,
-         Trans.vol.ratio = Trans.vol / Total.vol)
-# Define the muscle volume ratios to analyze
-muscle_volume_ratios <- c("SLong.vol.ratio", "Genio.vol.ratio", "ILong.vol.ratio", "Trans.vol.ratio")
-
-# Initialize a list to store regression results
-regression_results <- list()
-
-# Perform regression for each muscle volume ratio
-for (ratio in muscle_volume_ratios) {
-  formula <- as.formula(paste(ratio, "~ months_since_onset"))
-  model <- lm(formula, data = case_data)
-  regression_results[[ratio]] <- summary(model)
-  
-  # Print and plot the summary of the regression model
-  print(paste("Regression results for", ratio))
-  print(summary(model))
-  plot_title <- paste("Ratio of", ratio, "vs. Months Since Onset")
-  p <- ggplot(case_data, aes_string(x = "months_since_onset", y = ratio)) +
-    geom_point() +
-    geom_smooth(method = "lm", col = "blue") +
-    labs(title = plot_title, x = "Months Since Onset", y = "Volume Ratio")
-  print(p)
-}
-# Define the muscle volume ratios to analyze
-muscle_volume_ratios <- c("SLong.vol.ratio", "Genio.vol.ratio", "ILong.vol.ratio", "Trans.vol.ratio")
-
-# Initialize a list to store regression results
-regression_results <- list()
-
-# Perform regression for each muscle volume ratio
-for (ratio in muscle_volume_ratios) {
-  formula <- as.formula(paste(ratio, "~ months_since_onset"))
-  model <- lm(formula, data = case_data)
-  regression_results[[ratio]] <- summary(model)
-  
-  # Print and plot the summary of the regression model
-  print(paste("Regression results for", ratio))
-  print(summary(model))
-  plot_title <- paste("Ratio of", ratio, "vs. Months Since Onset")
-  p <- ggplot(case_data, aes_string(x = "months_since_onset", y = ratio)) +
-    geom_point() +
-    geom_smooth(method = "lm", col = "blue") +
-    labs(title = plot_title, x = "Months Since Onset", y = "Volume Ratio")
-  print(p)
-}
-# Accessing individual regression results
-regression_results[["SLong.vol.ratio"]]
-regression_results[["Genio.vol.ratio"]]
-regression_results[["ILong.vol.ratio"]]
-regression_results[["Trans.vol.ratio"]]
-
-# Perform linear regression on total volume against months since onset
-total_volume_model <- lm(Total.vol ~ months_since_onset, data = case_data)
-print("Regression results for Total Tongue Volume")
-print(summary(total_volume_model))
-
-# Plot the regression line and data points for total volume
-ggplot(case_data, aes(x = months_since_onset, y = Total.vol)) +
-  geom_point() +
-  geom_smooth(method = "lm", color = "blue") +
-  labs(title = "Total Tongue Volume vs. Months Since Onset",
-       x = "Months Since Onset", y = "Total Volume")
-
-
-
-# Advanced Analysis
-## Multilevel Modeling
-multilevel_models <- list()
-# Your multilevel modeling code here
-
-## Survival Analysis
-survival_analysis <- list()
-# Your survival analysis code here
-
-#longitudinal analysis
-
-## bulbar analysis
-
-# Post-hoc Analysis
-
-## Sensitivity Analysis
-# Your sensitivity analysis code here
