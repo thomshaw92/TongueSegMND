@@ -9,7 +9,7 @@ library(psych)
 base_folder <- "~/OneDrive - The University of Queensland/Projects/Tongue_seg/test-retest-experiment/"
 subjects <- c("009", "139")
 runs <- c("01", "02")
-raters <- c("FLR", "TBS", "MSH", "XZ")
+raters <- c("FLR", "TBS", "XZ")
 labels <- c(1, 2, 3, 4)
 
 calculate_dice <- function(segmentation1, segmentation2, label) {
@@ -182,6 +182,8 @@ file_path <- paste0(base_folder, "intra_rater_reliability_summary_table.png")
 png(file_path, width = 12, height = 6, units = "in", res = 120)
 grid.draw(table)
 dev.off()
+
+####CODE WORKING FROM HERE:
 
 library(oro.nifti)
 
