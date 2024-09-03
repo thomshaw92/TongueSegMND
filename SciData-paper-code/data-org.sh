@@ -81,8 +81,8 @@ for x in ${data_dir}/*labels.nii.gz; do
     if [ -f ${data_dir}/${base_name}_ROI.nii.gz ]; then
         # Print the operation to the terminal
         if [ ! -f ${cropped_data_dir}/${base_name}_labels_cropped.nii.gz ]; then
-            echo "ImageMath 3 ${cropped_data_dir}/${base_name}_labels_cropped.nii.gz m ${x} ${data_dir}/${base_name}_ROI.nii.gz"
-            ImageMath 3 ${cropped_data_dir}/${base_name}_labels_cropped.nii.gz m ${x} ${data_dir}/${base_name}_ROI.nii.gz
+        echo "ImageMath 3 ${cropped_data_dir}/${base_name}_labels_cropped.nii.gz m ${x} ${data_dir}/${base_name}_ROI.nii.gz"
+        ImageMath 3 ${cropped_data_dir}/${base_name}_labels_cropped.nii.gz m ${x} ${data_dir}/${base_name}_ROI.nii.gz
         fi
     else
         echo "ROI file for ${x} not found. Skipping..."
@@ -90,11 +90,11 @@ for x in ${data_dir}/*labels.nii.gz; do
 done
 
 # Remove label 5 from every cropped image
-for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
-    #print what is happening first to the terminal
-    echo "python ${remove_labels} --label 5 ${x} ${x}"
-    python ${remove_labels} --label 5 ${x} ${x}
-done
+#for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
+#    #print what is happening first to the terminal
+#    echo "python ${remove_labels} --label 5 ${x} ${x}"
+#    python ${remove_labels} --label 5 ${x} ${x}
+#done
 
 # Threshold the labels_cropped.nii.gz file to make all values greater than 1 equal to 1
 for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
@@ -157,11 +157,10 @@ for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
         echo "Thresholding $(basename ${x}) to set all values > 1 to 0"
         # Apply the thresholding: anything greater than 1 becomes 1
         ImageMath 3 ${x:0:-7}_label_1.nii.gz ReplaceVoxelValue ${x} 2 5 0
-    fi
 done
 #then do the same for label 2
 for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
-        echo "Thresholding $(basename ${x}) to set all values > 1 to 1"
+        echo "Thresholding $(basename ${x}) to set value 2 to 1"
         # Apply the thresholding: anything greater than 1 becomes 1
         ImageMath 3 ${x:0:-7}_intermediate.nii.gz ReplaceVoxelValue ${x} 0 1 0
         ImageMath 3 ${x:0:-7}_intermediate_2.nii.gz ReplaceVoxelValue ${x:0:-7}_intermediate.nii.gz 3 5 0
@@ -175,7 +174,7 @@ for x in ${cropped_data_dir}/*_label_1.nii.gz; do
     segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
     
     # Use the Python script to calculate the mean signal within the ROI
-    mean_signal=$(python ${SNR_MEAN} --mean --mask ${x} ${cropped_data_dir}/*w_cropped_normalised.nii.gz | grep "Mean intensity" | awk '{print $3}')
+    mean_signal=$(python ${SNR_MEAN} --mean --mask ${x} ${cropped_data_dir}/*${segID}*w_cropped_normalised.nii.gz | grep "Mean intensity" | awk '{print $3}')
     
     # Save the mean signal to a text file
     echo ${mean_signal} > ${SNR_CNR_dir}/${segID}_mean_signal_tissue_1.txt
@@ -184,9 +183,8 @@ done
 for x in ${cropped_data_dir}/*_label_2.nii.gz; do
     # Extract the segID component from the filename
     segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
-     
     # Use the Python script to calculate the mean signal within the ROI
-    mean_signal=$(python ${SNR_MEAN} --mean --mask ${x} ${cropped_data_dir}/*w_cropped_normalised.nii.gz | grep "Mean intensity" | awk '{print $3}')
+    mean_signal=$(python ${SNR_MEAN} --mean --mask ${x} ${cropped_data_dir}/*${segID}*w_cropped_normalised.nii.gz | grep "Mean intensity" | awk '{print $3}')
     
     # Save the mean signal to a text file
     echo ${mean_signal} > ${SNR_CNR_dir}/${segID}_mean_signal_tissue_2.txt
@@ -198,7 +196,7 @@ for x in ${SNR_CNR_dir}/*_mean_signal.txt; do
     segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
     
     # Print what is happening first to the terminal
-    echo "Calculating SNR for ${segID}"
+    echo "Calculating final SNR for ${segID}"
     
     # Read the mean signal and noise standard deviation from their respective files
     mean_signal=$(cat ${SNR_CNR_dir}/${segID}_mean_signal.txt)
@@ -218,7 +216,7 @@ for x in ${SNR_CNR_dir}/*_mean_signal_tissue_1.txt; do
     segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
     
     # Print what is happening first to the terminal
-    echo "Calculating CNR for ${segID}"
+    echo "Calculating final CNR for ${segID}"
     
     # Read the mean signal and noise standard deviation from their respective files
     mean_signal_tissue_1=$(cat ${SNR_CNR_dir}/${segID}_mean_signal_tissue_1.txt)
