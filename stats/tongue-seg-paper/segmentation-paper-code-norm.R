@@ -11,8 +11,24 @@ library(ggplot2)
 library(gridExtra)
 library(tidyr)
 
-# Read in the spreadsheet
-data <- read_excel("~/OneDrive - The University of Queensland/Projects/Tongue_seg/clinical-demo-data/main-tongue-data-spreadsheet.xlsx")
+####outlier analysis
+##normality
+### differences between dataset (ANOVA plus t-tests)
+### sex, weight, height, age
+#correlations between tongue volumes (within volumes)
+
+
+# Define the data directory and file name
+data.dir <- "~/OneDrive - The University of Queensland/Projects/BeLong/clinical_neuropsyc/"
+file.name <- "BeLong-aggregate-clin-neuropsyc-demographics_20230918.xlsx"
+file.path <- file.path(data.dir, file.name)
+
+# Specify the sheet name
+sheet.name <- "MND.Aggregate"
+
+# Read the specific sheet from the Excel file
+data <- read_excel(file.path, sheet = sheet.name)
+
 
 # List of IDs to exclude
 exclude_ids <- c(9, 61, 126, 7, 53, 113, 63, 116, 21, 72, 149, 8, 68, 114, 84, 121, 22, 10, 69, 115, 129, 15, 18, 77, 118, 133, 28, 78, 119, 135,
@@ -21,7 +37,7 @@ exclude_ids <- c(9, 61, 126, 7, 53, 113, 63, 116, 21, 72, 149, 8, 68, 114, 84, 1
 
 # Filter out the data
 filtered_data <- data %>% 
-  filter(!(`segmentation-id` %in% exclude_ids))
+  filter(!(`segmentation.id` %in% exclude_ids))
 
 # Function to calculate IQR and return a logical vector indicating whether each value is an outlier
 calculate_outliers <- function(data, column) {
@@ -89,17 +105,37 @@ print_correlation(correlation_unnorm_height, "Correlation between Unnormalized V
 correlation_norm_height <- cor.test(filtered_data$normalized_vol, filtered_data$height)
 print_correlation(correlation_norm_height, "Correlation between Normalized Volume and Height:")
 
+
+#####################################################
 ###CHECK WHICH MODEL IS BEST FOR PREDICTING VOLUME###
+#####################################################
+library(car)
+# Assuming 'filtered_data' is your original dataset
+non0_data <- filtered_data %>%
+  filter(!is.na(sex_numerical) & !is.na(weight) & !is.na(height)) %>%  # Removes NAs
+  filter(weight != 0 & height != 0)  # Removes zeros
+
+# Checking for collinearity among weight, height, and sex
+model_collinearity_check <- lm(`Total-vol` ~ `sex_numerical` + weight + height, data = non0_data)
+vif(model_collinearity_check)  # This will give you the VIF for each predictor
+
+# Model with only sex for Total Volume
+model_TotalVol_Sex <- lm(`Total-vol` ~ `sex_numerical`, data = non0_data)
+summary(model_TotalVol_Sex)
+
+# Model with only sex for Normalized Volume
+model_NormVol_Sex <- lm(normalized_vol ~ `sex_numerical`, data = non0_data)
+summary(model_NormVol_Sex)
 # Model including weight, height, and sex for Total Volume
-model_TotalVol_Whs <- lm(`Total-vol` ~ `sex_numerical` + weight + height, data = filtered_data)
+model_TotalVol_Whs <- lm(`Total-vol` ~ `sex_numerical` + weight + height, data = non0_data)
 summary(model_TotalVol_Whs)
 
 # Model including weight, height, and sex for Normalized Volume
-model_NormVol_Whs <- lm(normalized_vol ~ `sex_numerical` + weight + height, data = filtered_data)
+model_NormVol_Whs <- lm(normalized_vol ~ `sex_numerical` + weight + height, data = non0_data)
 summary(model_NormVol_Whs)
 
 # Model with IOC volume alone for comparison
-model_IOC <- lm(`Total-vol` ~ `IOC-vol-mm3`, data = filtered_data)
+model_IOC <- lm(`Total-vol` ~ `IOC-vol-mm3`, data = non0_data)
 summary(model_IOC)
 
 #  Scatter plot of IOC-vol-mm3 vs. Total-vol (as before)
@@ -141,7 +177,7 @@ if ("TukeyHSD" %in% rownames(summary(anova_result)$statistics)) {
 }
 
 # You might also want to visualize the interaction between muscle type and dataset
-ggplot(long_format_data, aes(x=Muscle, y=Volume, color=dataset)) +
+p <- ggplot(long_format_data, aes(x=Muscle, y=Volume, color=dataset)) +
   geom_point(position=position_dodge(width=0.8), size=3) +
   stat_summary(fun=mean, geom="line", aes(group=Dataset), position=position_dodge(width=0.8)) +
   theme_minimal() +
@@ -250,6 +286,62 @@ s_pooled <- sqrt(((n_control - 1) * std_control^2 + (n_case - 1) * std_case^2) /
 cohen_d <- (mean_control - mean_case) / s_pooled
 
 cohen_d
+
+############
+#make sure there are no differences in demos across dataset:
+# Assuming your data is in 'filtered_data' and it has a column 'dataset' that identifies the dataset for each entry
+
+# ANOVA for Age across datasets
+anova_age <- aov(age_at_scan ~ dataset, data = filtered_data)
+summary(anova_age)
+print("ANOVA results for Age across Datasets:")
+print(summary(anova_age))
+
+# ANOVA for Weight across datasets
+anova_weight <- aov(weight ~ dataset, data = filtered_data)
+summary(anova_weight)
+print("ANOVA results for Weight across Datasets:")
+print(summary(anova_weight))
+
+# ANOVA for Height across datasets
+anova_height <- aov(height ~ dataset, data = filtered_data)
+summary(anova_height)
+print("ANOVA results for Height across Datasets:")
+print(summary(anova_height))
+
+# Ensure that 'sex_numerical' is treated as a factor for better interpretation
+filtered_data$sex_numerical <- as.factor(filtered_data$sex_numerical)
+filtered_data$dataset <- as.factor(filtered_data$dataset)
+filtered_data$sex_numerical <- factor(filtered_data$sex_numerical, labels = c("Male", "Female"))
+
+# Create a contingency table of sex by dataset and print it
+table_sex_dataset <- table(filtered_data$sex_numerical, filtered_data$dataset)
+print("Contingency Table for Sex across Datasets:")
+print(table_sex_dataset)
+
+# Check the expected counts to ensure the validity of the chi-squared test
+expected_counts <- chisq.test(table_sex_dataset)$expected
+print("Expected counts:")
+print(expected_counts)
+
+# If expected counts are all greater than 5, we can consider the chi-squared test valid; otherwise, consider Fisher's Exact Test
+if (any(expected_counts < 5)) {
+  print("Some expected counts are less than 5. Considering Fisher's Exact Test for better accuracy.")
+  fisher_test_result <- fisher.test(table_sex_dataset)
+  print("Fisher's Exact Test results for Sex across Datasets:")
+  print(fisher_test_result)
+} else {
+  # Perform the Chi-squared test again if all counts are adequate
+  chi_sq_test_sex <- chisq.test(table_sex_dataset)
+  print("Chi-squared Test results for Sex across Datasets:")
+  print(chi_sq_test_sex)
+}
+
+
+#age significant:   
+print("Performing Tukey's HSD for Age")
+tukey_age <- TukeyHSD(anova_age)
+print(tukey_age)
 
 
 
@@ -451,4 +543,5 @@ combined_plot <- arrangeGrob(p1, column_plots, ncol = 1, heights = c(1/3, 2/3))
 
 # Save the figure
 ggsave("~/OneDrive - The University of Queensland/Projects/Tongue_seg/clinical-demo-data/figures-stats/combined_plots_exp-3.pdf", combined_plot, width=16, height=12)
+
 
