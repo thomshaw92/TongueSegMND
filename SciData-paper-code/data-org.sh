@@ -1,10 +1,11 @@
 #!/bin/bash
 # Rough script for organizing data and SNR/CNR calculations
-# Crop data
+# Thomas Shaw 2024. 
+# Crop data to the Template defined ROI
 # Remove label 5
 # SNR and CNR calculations
 
-data_dir="/Users/uqtshaw/Library/CloudStorage/OneDrive-TheUniversityofQueensland/Projects/Tongue_seg/data/SciDataReleaseData2"
+data_dir="/Users/uqtshaw/Library/CloudStorage/OneDrive-TheUniversityofQueensland/Projects/Tongue_seg/data/SciDataReleaseData"
 cropped_data_dir="${data_dir}/cropped"
 SNR_CNR_dir="${data_dir}/snr-cnr-tongue-crop"
 affine_dir="${data_dir}/cropped/affine_matrices"
@@ -89,11 +90,11 @@ for x in ${data_dir}/*labels.nii.gz; do
 done
 
 # Remove label 5 from every cropped image
-#for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
-# print what is happening first to the terminal
-#    echo "python ${remove_labels} --label 5 ${x} ${x}"
-#    python ${remove_labels} --label 5 ${x} ${x}
-#done
+for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
+    #print what is happening first to the terminal
+    echo "python ${remove_labels} --label 5 ${x} ${x}"
+    python ${remove_labels} --label 5 ${x} ${x}
+done
 
 # Threshold the labels_cropped.nii.gz file to make all values greater than 1 equal to 1
 for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
@@ -105,29 +106,128 @@ for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
     fi
 done
 
+#make all the greyscale images between 0 and 1
+for x in ${cropped_data_dir}/*w_cropped.nii.gz; do
+    if [ ! -f ${x:0:-7}_normalised.nii.gz ]; then
+        ImageMath 3 ${x:0:-7}_normalised.nii.gz RescaleImage ${x} 0 1
+    fi
+done
+
+#do the same for the SNR ROI 
+for x in ${cropped_data_dir}/*_SNR_ROI.nii.gz; do
+    if [ ! -f ${x:0:-7}_normalised.nii.gz ]; then
+        ImageMath 3 ${x:0:-7}_normalised.nii.gz RescaleImage ${x} 0 1
+    fi
+done
 
 # Calculate SNR for every cropped image using the SNR ROI mask (which is now the noise area)
-for x in ${cropped_data_dir}/*_cropped.nii.gz; do
+for x in ${cropped_data_dir}/*w_cropped_normalised.nii.gz; do
+    # Extract the segID component from the filename
+    segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
+    
     # Print what is happening first to the terminal
-    echo "Calculating SNR for $(basename ${x})"
+    echo "Calculating SNR for $(basename ${x})" 
     
-    # The base name for corresponding files
-    base_name=$(basename ${x} _cropped.nii.gz)
+    # Use the Python script to calculate the mean signal within the ROI
+    mean_signal=$(python ${SNR_MEAN} --mean --mask ${cropped_data_dir}/*${segID}*_labels_cropped_binarised.nii.gz ${x} | grep "Mean intensity" | awk '{print $3}')
     
-    # Use the Python script to calculate the standard deviation of noise (without mask) and the mean signal within the ROI
-    noise_std=$(python ${SNR_MEAN} --std ${x} | grep "Standard deviation" | awk '{print $3}')
-    mean_signal=$(python ${SNR_MEAN} --mean --mask ${cropped_data_dir}/${base_name}_ROI.nii.gz ${x} | grep "Mean intensity" | awk '{print $3}')
+    # Save the mean signal to a text file
+    echo ${mean_signal} > ${SNR_CNR_dir}/${segID}_mean_signal.txt
+done
+
+# Calculate the standard deviation of noise using the SNR ROI
+for x in ${cropped_data_dir}/*_SNR_ROI_normalised.nii.gz; do
+    # Extract the segID component from the filename
+    segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
     
-    echo "Mean signal: ${mean_signal}"
-    echo "Std noise: ${std_noise}"
+    # Print what is happening first to the terminal     
+    echo "Calculating noise standard deviation for $(basename ${x})"
     
-    # Check if values were correctly extracted
-    if [[ -z "${mean_signal}" || -z "${noise_std}" ]]; then
-        echo "Error: Failed to calculate SNR for $(basename ${x})."
-        continue
+    # Use the Python script to calculate the standard deviation of noise (without mask)
+    std_noise=$(python ${SNR_MEAN} --std ${x} | grep "Standard deviation" | awk '{print $3}')
+    
+    # Save the standard deviation to a text file
+    echo ${std_noise} > ${SNR_CNR_dir}/${segID}_std_noise.txt
+done
+
+
+#calculate the mean signal of tissue 1 in the labels_cropped file
+#first threshold the labels_cropped file to make all values greater than 1 equal to 1
+for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
+        echo "Thresholding $(basename ${x}) to set all values > 1 to 0"
+        # Apply the thresholding: anything greater than 1 becomes 1
+        ImageMath 3 ${x:0:-7}_label_1.nii.gz ReplaceVoxelValue ${x} 2 5 0
     fi
+done
+#then do the same for label 2
+for x in ${cropped_data_dir}/*labels_cropped.nii.gz; do
+        echo "Thresholding $(basename ${x}) to set all values > 1 to 1"
+        # Apply the thresholding: anything greater than 1 becomes 1
+        ImageMath 3 ${x:0:-7}_intermediate.nii.gz ReplaceVoxelValue ${x} 0 1 0
+        ImageMath 3 ${x:0:-7}_intermediate_2.nii.gz ReplaceVoxelValue ${x:0:-7}_intermediate.nii.gz 3 5 0
+        ImageMath 3 ${x:0:-7}_label_2.nii.gz ReplaceVoxelValue ${x:0:-7}_intermediate_2.nii.gz 2 2 1
+        rm ${x:0:-7}_intermediate.nii.gz ${x:0:-7}_intermediate_2.nii.gz
+done
+
+#now calculate the mean signal for label 1
+for x in ${cropped_data_dir}/*_label_1.nii.gz; do
+    # Extract the segID component from the filename
+    segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
     
-    # Calculate SNR and save the result
-    snr_value=$(echo "scale=2; ${mean_signal} / ${noise_std}" | bc)
-    echo "SNR for $(basename ${x}): ${snr_value}" > ${SNR_CNR_dir}/${base_name}_SNR.txt
+    # Use the Python script to calculate the mean signal within the ROI
+    mean_signal=$(python ${SNR_MEAN} --mean --mask ${x} ${cropped_data_dir}/*w_cropped_normalised.nii.gz | grep "Mean intensity" | awk '{print $3}')
+    
+    # Save the mean signal to a text file
+    echo ${mean_signal} > ${SNR_CNR_dir}/${segID}_mean_signal_tissue_1.txt
+done
+#and do the same for label 2
+for x in ${cropped_data_dir}/*_label_2.nii.gz; do
+    # Extract the segID component from the filename
+    segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
+     
+    # Use the Python script to calculate the mean signal within the ROI
+    mean_signal=$(python ${SNR_MEAN} --mean --mask ${x} ${cropped_data_dir}/*w_cropped_normalised.nii.gz | grep "Mean intensity" | awk '{print $3}')
+    
+    # Save the mean signal to a text file
+    echo ${mean_signal} > ${SNR_CNR_dir}/${segID}_mean_signal_tissue_2.txt
+done
+
+# Calculate the SNR by combining mean signal and noise standard deviation
+for x in ${SNR_CNR_dir}/*_mean_signal.txt; do
+    # Extract the segID component from the filename
+    segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
+    
+    # Print what is happening first to the terminal
+    echo "Calculating SNR for ${segID}"
+    
+    # Read the mean signal and noise standard deviation from their respective files
+    mean_signal=$(cat ${SNR_CNR_dir}/${segID}_mean_signal.txt)
+    std_noise=$(cat ${SNR_CNR_dir}/${segID}_std_noise.txt)
+    
+    # Calculate SNR
+    SNR=$(echo "scale=2; $mean_signal / $std_noise" | bc)
+    
+    # Save the SNR value to a text file
+    echo ${SNR} > ${SNR_CNR_dir}/${segID}_SNR.txt
+done
+
+
+#calculate CNR by combining the mean signal of tissue 1 and tissue 2 and the noise standard deviation
+for x in ${SNR_CNR_dir}/*_mean_signal_tissue_1.txt; do
+    # Extract the segID component from the filename
+    segID=$(basename ${x} | grep -o 'segID-[0-9]\{3\}')
+    
+    # Print what is happening first to the terminal
+    echo "Calculating CNR for ${segID}"
+    
+    # Read the mean signal and noise standard deviation from their respective files
+    mean_signal_tissue_1=$(cat ${SNR_CNR_dir}/${segID}_mean_signal_tissue_1.txt)
+    mean_signal_tissue_2=$(cat ${SNR_CNR_dir}/${segID}_mean_signal_tissue_2.txt)
+    std_noise=$(cat ${SNR_CNR_dir}/${segID}_std_noise.txt)
+    
+    # Calculate CNR
+    CNR=$(echo "scale=2; ($mean_signal_tissue_1 - $mean_signal_tissue_2) / $std_noise" | bc)
+    
+    # Save the CNR value to a text file
+    echo ${CNR} > ${SNR_CNR_dir}/${segID}_CNR.txt
 done
