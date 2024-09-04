@@ -37,7 +37,7 @@ def crop_image_dyn(input_file_name, output_file_name):
     mask[z_min:z_max,x_min:x_max, y_min:y_max] = 1
     
     cropped_data = data*mask
-    cropped_label = label_data*mask
+    cropped_label = np.array(label_data*mask, dtype=int)
     
     
     # Create a new image with the cropped data but keep the old header
