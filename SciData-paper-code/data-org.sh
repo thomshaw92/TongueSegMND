@@ -229,3 +229,5 @@ for x in ${SNR_CNR_dir}/*_mean_signal_tissue_1.txt; do
     # Save the CNR value to a text file
     echo ${CNR} > ${SNR_CNR_dir}/${segID}_CNR.txt
 done
+
+
