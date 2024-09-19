@@ -31,7 +31,7 @@ exclude.ids <- c(9, 61, 126, 7, 63, 116, 21, 72, 149, 84, 121, 22, 129, 15, 133,
 df <- df %>% 
   filter(!(`segmentation.id` %in% exclude.ids))
 #remove any that aren;t session one
-df <- df %>% filter(MND.IMAGING.session == 'ses-01')
+#df <- df %>% filter(MND.IMAGING.session == 'ses-01')
 
 # Convert columns to numeric if they are not already
 df$Trans.vol <- as.numeric(as.character(df$Trans.vol))
@@ -172,8 +172,7 @@ plot.and.save <- function(data, col.name, file.path) {
 for (col in tongue.volume.columns) {
   plot.and.save(df.clean, col, plots.directory)
 }
-
-# Visualizations
+# Function to visualize data with black jitter points
 visualize.data <- function(data, col.name, plots.directory) {
   # Check if col.name is a valid column name
   if (!col.name %in% names(data)) {
@@ -187,18 +186,21 @@ visualize.data <- function(data, col.name, plots.directory) {
   filtered_data <- data %>%
     filter(formal.diagnosis.numeric %in% included_groups)
   
-  # Generate violin plots for the specified diagnosis groups
+  # Generate violin plots for the specified diagnosis groups with jitter points
   violin.plot <- ggplot(filtered_data, aes(x = formal.diagnosis.numeric, y = .data[[col.name]], group = formal.diagnosis.numeric, fill = formal.diagnosis.numeric)) +
-    geom_violin(trim = FALSE) + # Draw violin plot
-    scale_fill_manual(values = c("Control" = "#b3e2cd", "ALS" = "#fdcdac", "PLS" = "#cbd5e8", "Flail Limb/PMA" = "#f4cae4")) + 
+    geom_violin(trim = FALSE) +  # Draw violin plot
+    geom_jitter(width = 0.25, size = 2, color = "black", alpha = 0.7) +  # Add black jitter points
+    # Set custom fill colors for the violin plot (discrete fill for diagnosis groups)
+    scale_fill_manual(values = c("Control" = "#ffd92f", "ALS" = "#fc8d62", "PLS" = "#8da0cb", "Flail Limb/PMA" = "#e78ac3")) +
     theme_minimal() +
+    # Add labels and title
     ggtitle(paste("Violin Plot of", col.name, "by Diagnosis Group")) +
     xlab("Diagnosis Group") +
     ylab("Value") +
-    theme(legend.position = "bottom") # Ensure legend is shown for distinction
+    # Ensure the legend is displayed
+    theme(legend.position = "bottom")
   
-
-  # Display the plot
+  # Render the plot
   print(violin.plot)
   
   # Save the plot
@@ -210,6 +212,43 @@ visualize.data <- function(data, col.name, plots.directory) {
 for (col in tongue.volume.columns) {
   visualize.data(df.clean, col, plots.directory)
 }
+
+
+
+###Figure for the first paper
+
+# Define the groups to include
+included_groups <- c("Control", "ALS", "PLS", "Flail Limb/PMA")
+
+# Filter the data for specified groups
+filtered_data <- df.clean %>%
+  filter(formal.diagnosis.numeric %in% included_groups)
+
+# Generate violin plot specifically for total.vol.cor with jitter points
+violin_plot_total_vol_cor <- ggplot(filtered_data, aes(x = formal.diagnosis.numeric, y = total.vol.cor, group = formal.diagnosis.numeric, fill = formal.diagnosis.numeric)) +
+  geom_violin(trim = FALSE) +  # Draw violin plot
+  geom_jitter(width = 0.25, size = 2, color = "black", alpha = 0.7) +  # Add black jitter points
+  # Set custom fill colors for the violin plot (discrete fill for diagnosis groups)
+  scale_fill_manual(values = c("Control" = "#FC8D62", "ALS" = "#FFBDCA", "PLS" = "#FF8694", "Flail Limb/PMA" = "#C45061")) +
+  theme_minimal() +
+  # Add labels and title
+  ggtitle("Violin Plot of Total Volume (IOC Corrected) by Diagnosis Group") +
+  xlab("Formal Diagnosis") +
+  ylab("Total Volume (IOC Corrected)") +  # Update y-axis label
+  # Remove the legend by setting legend.position to "none"
+  theme(plot.title = element_text(size = 14),
+        axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        legend.position = "none")  # Remove the legend
+
+# Render the plot
+print(violin_plot_total_vol_cor)
+
+# Save the plot
+ggsave(filename = "ViolinPlot_Total_Vol_Cor.png", plot = violin_plot_total_vol_cor, path = plots.directory, width = 10, height = 6, dpi = 300)
+
 
 # Save the cleaned dataframe to an   RDS file for future use
 saveRDS(df.clean, file.path(data.dir, "df.clean.rds"))
