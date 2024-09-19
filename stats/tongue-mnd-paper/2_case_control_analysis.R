@@ -159,25 +159,53 @@ print(severity_table)
 df_clean <- df_clean %>%
   mutate(total.vol.cor = as.numeric(as.character(total.vol.cor)))
 
-# Create the violin plot with ggplot2
+
+# Reorder bulbar_severity to display as Normal, then Bulbar Involvement, then Severe Bulbar Involvement
+df_clean$bulbar_severity <- factor(df_clean$bulbar_severity, 
+                                   levels = c("Normal", "Bulbar Involvement", "Severe Bulbar Involvement"))
+
+# Check for NAs and ensure ALSFRS.R.bulbar is numeric
+df_clean <- df_clean %>%
+  mutate(ALSFRS.R.bulbar = as.numeric(as.character(ALSFRS.R.bulbar))) %>%
+  filter(!is.na(ALSFRS.R.bulbar))  # Remove rows with NA in ALSFRS.R.bulbar
+
+# Create the violin plot with points colored by ALSFRS.R.bulbar (lower = red, higher = blue)
+library(plotly)
+
+# Check for NAs and ensure ALSFRS.R.bulbar is numeric
+df_clean <- df_clean %>%
+  mutate(ALSFRS.R.bulbar = as.numeric(as.character(ALSFRS.R.bulbar))) %>%
+  filter(!is.na(ALSFRS.R.bulbar))  # Remove rows with NA in ALSFRS.R.bulbar
+
 p <- ggplot(df_clean, aes(x = bulbar_severity, y = total.vol.cor, fill = bulbar_severity)) +
   geom_violin(trim = FALSE) +
-  geom_jitter(aes(text = segmentation.id), width = 0.1, alpha = 0.5) +  # Add individual data points with segmentation.id as text
+  geom_jitter(aes(color = ALSFRS.R.bulbar, text = segmentation.id),  # Add segmentation.id for hover
+              width = 0.2,  # Increase jitter width
+              size = 2,     # Make points larger
+              alpha = 0.7) +  # Increase alpha for better visibility
+  scale_fill_manual(values = c("Severe Bulbar Involvement" = "#006d2c", 
+                               "Bulbar Involvement" = "#66c2a4", 
+                               "Normal" = "#ccece6")) +  # Set custom colors for violins
+  scale_color_gradient(low = "red", high = "blue", limits = c(0, 12)) +  # Set color gradient for bulbar score with correct limits
   labs(title = "Distribution of Total Volume by Bulbar Severity",
-       x = "Bulbar Severity",
-       y = "Total Volume (cor)") +
+       x = "Bulbar Severity Category",
+       y = "Total Volume (cor)",
+       fill = "Bulbar Severity",  # Update fill legend title to "Bulbar Severity"
+       color = "ALSFRS.R Bulbar Score") +  # Update color legend title
   theme_minimal() +
-  theme(legend.position = "none")
+  theme(legend.position = "right") +  # Show legend for the color gradient
+  guides(fill = "none")  # Remove the fill (bulbar_severity) legend but keep the color (ALSFRS.R.bulbar) legend
 
-# Convert the ggplot object to an interactive plotly object
-p_interactive <- ggplotly(p, tooltip = "text")
+# Render the plot
+print(p)
+# Convert to plotly for interactive plot with segmentation.id as the hover text
+p_interactive <- ggplotly(p, tooltip = c("text"))
 
-# Display the interactive plot
+# Render the interactive plot
 p_interactive
 
-# Display the interactive plot
-p_interactive
-  theme(legend.position = "none")
+
+
 
 #perform KW for each muscle volume to check for differences between bulbar groups
 kruskal_results <- list()
