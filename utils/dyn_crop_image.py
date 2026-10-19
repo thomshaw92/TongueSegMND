@@ -3,10 +3,8 @@ import nibabel as nib
 import numpy as np
 
 def crop_image_dyn(input_file_name, output_file_name):
-    # Load the image
     image = nib.load(input_file_name + '.nii.gz')
     label = nib.load(input_file_name + '_labels.nii.gz')
-    # Get the image data
     data = image.get_fdata()
     label_data = label.get_fdata()
     
@@ -40,11 +38,9 @@ def crop_image_dyn(input_file_name, output_file_name):
     cropped_label = np.array(label_data*mask, dtype=int)
     
     
-    # Create a new image with the cropped data but keep the old header
     cropped_image = nib.Nifti1Image(cropped_data, image.affine, image.header)
     cropped_label = nib.Nifti1Image(cropped_label, label.affine, label.header)
     
-    # Save the new image to the output path
     nib.save(cropped_image, output_file_name + '_cropped.nii.gz')
     nib.save(cropped_label, output_file_name + '_cropped_labels.nii.gz')
     

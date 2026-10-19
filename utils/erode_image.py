@@ -4,26 +4,21 @@ import nibabel as nib
 from scipy.ndimage import binary_erosion, generate_binary_structure
 
 def erode_segmentation(input_file, output_file, label, erosion_size):
-    # Load the segmentation volume
     img = nib.load(input_file)
     segmentation = img.get_fdata()
 
-    # Create a binary mask for the specified label
     mask = segmentation == label
 
     # Generate a spherical structuring element
-    struct_elem = generate_binary_structure(3, 3)  # 3D with maximal connectivity for a spherical shape
+    struct_elem = generate_binary_structure(3, 3)
     if erosion_size > 1:
         struct_elem = np.kron(struct_elem, np.ones((erosion_size, erosion_size, erosion_size)))
 
-    # Perform erosion
     eroded_mask = binary_erosion(mask, structure=struct_elem)
 
-    # Apply the eroded mask to the segmentation
     eroded_segmentation = segmentation.copy()
-    eroded_segmentation[eroded_mask == 0] = 0  # Set non-mask voxels to 0
+    eroded_segmentation[eroded_mask == 0] = 0
 
-    # Save the eroded segmentation
     eroded_img = nib.Nifti1Image(eroded_segmentation, img.affine)
     nib.save(eroded_img, output_file)
 

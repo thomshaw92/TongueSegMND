@@ -48,15 +48,12 @@ def parse_arguments():
 def main():
     args = parse_arguments()
 
-    # Load the input Nifti image
     input_img_nii = nib.load(args.input)
     input_img_data = input_img_nii.get_fdata()
 
-    # Process labels
     labels = args.labels if args.labels is not None else np.unique(input_img_data)
     output_img_data = process_image(input_img_data, labels)
 
-    # Save the output image
     output_img_nii = nib.Nifti1Image(output_img_data, input_img_nii.affine, input_img_nii.header)
     nib.save(output_img_nii, args.output)
 

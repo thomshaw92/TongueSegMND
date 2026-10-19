@@ -4,20 +4,15 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 
 def expand_segmentation(input_nifti, output_nifti, direction, expansion_slices=2, label=255, sigma_mm=1.0):
-    # Load NIfTI image
     img = nib.load(input_nifti)
     data = img.get_fdata()
     
-    # Ensure integer format
     data = np.round(data).astype(int)
 
-    # Create a binary mask for label 255
     binary_mask = (data == label)
 
-    # Identify segmentation location
     x_idx, y_idx, z_idx = np.where(binary_mask)
 
-    # Determine which axis to expand along
     if direction == 'x':
         min_idx, max_idx = np.min(x_idx), np.max(x_idx)
         for shift in range(1, expansion_slices + 1):
@@ -45,13 +40,11 @@ def expand_segmentation(input_nifti, output_nifti, direction, expansion_slices=2
     else:
         raise ValueError("Invalid direction. Choose from 'x', 'y', or 'z'.")
 
-    # Apply Gaussian smoothing (1mm)
     smoothed_data = gaussian_filter(data.astype(float), sigma=sigma_mm)
 
     # Re-binarize segmentation using a threshold
     final_data = np.where(smoothed_data > (label / 2), 1, 0).astype(np.uint8)  # Convert back to 1 instead of 255
 
-    # Save the smoothed and expanded segmentation
     new_img = nib.Nifti1Image(final_data, img.affine, img.header)
     nib.save(new_img, output_nifti)
 

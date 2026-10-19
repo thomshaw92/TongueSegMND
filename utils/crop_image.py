@@ -2,10 +2,8 @@ import argparse
 import nibabel as nib
 
 def crop_image(input_path, output_path, slices_to_crop):
-    # Load the image
     image = nib.load(input_path)
 
-    # Get the image data
     data = image.get_fdata()
 
     # Crop slices from each dimension
@@ -16,10 +14,8 @@ def crop_image(input_path, output_path, slices_to_crop):
         else:
             cropped_data = cropped_data.take(range(cropped_data.shape[axis] - num_slices), axis=axis)
 
-    # Create a new image with the cropped data but keep the old header
     cropped_image = nib.Nifti1Image(cropped_data, image.affine, image.header)
 
-    # Save the new image to the output path
     nib.save(cropped_image, output_path)
 
 def main():

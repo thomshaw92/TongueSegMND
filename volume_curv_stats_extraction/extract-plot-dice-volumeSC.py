@@ -22,12 +22,10 @@ def plot_results(results, output_file):
 
     fig, ax = plt.subplots(2, 1, figsize=(10, 8))
 
-    # Volume Similarity Plot
     ax[0].barh(labels, volume_similarities, color='skyblue')
     ax[0].set_title('Volume Similarity')
     ax[0].set_xlim(0, 1)
 
-    # Dice Score Plot
     ax[1].barh(labels, dices, color='salmon')
     ax[1].set_title('DICE Score')
     ax[1].set_xlim(0, 1)

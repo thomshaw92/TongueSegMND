@@ -22,7 +22,7 @@ def create_mesh(data, label):
 
 def compute_mean_curvature(mesh):
     """Compute the mean curvature of the mesh."""
-    curvature_filter = vtk.vtkCurvatures()  # Corrected class name
+    curvature_filter = vtk.vtkCurvatures()
     curvature_filter.SetInputData(mesh)
     curvature_filter.SetCurvatureTypeToMean()
     curvature_filter.Update()
@@ -43,7 +43,7 @@ def extract_label_volumes_and_curvatures(input_directory):
             data = img.get_fdata()
             header = img.header
             voxel_sizes = header.get_zooms()  # Get voxel dimensions (width, height, depth) in mm
-            voxel_volume = np.prod(voxel_sizes)  # Calculate the volume of a single voxel
+            voxel_volume = np.prod(voxel_sizes)
 
             print(f"Processing file: {file} with segID: {segID}")
 
@@ -55,7 +55,7 @@ def extract_label_volumes_and_curvatures(input_directory):
                 mean_curvature = compute_mean_curvature(mesh)
                 print(f"Calculated mean curvature for label {label}: {mean_curvature}")
                 voxel_count = np.sum(label_data)
-                volume_mm3 = voxel_count * voxel_volume  # Convert voxel count to physical volume
+                volume_mm3 = voxel_count * voxel_volume
 
                 record[f'Label_{label}_Volume_mm3'] = volume_mm3
                 record[f'Label_{label}_Curvature'] = mean_curvature
