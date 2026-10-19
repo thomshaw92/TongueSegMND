@@ -1,0 +1,38 @@
+[project]
+name = "tongue-qc"
+version = "0.1.0"
+description = "Two-keystroke visual QC for tongue MRI segmentations"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Thom Shaw" }]
+keywords = ["mri", "tongue", "segmentation", "quality-control", "neuroimaging"]
+
+dependencies = [
+    "numpy>=2.2.6",
+    "nibabel>=5.3.2",
+    "scipy>=1.16.1",
+    "Pillow>=11.3.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.4.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning:tongue_qc.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["tongue_qc/assets"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "PTH", "RUF"]
+ignore = [
+    "E501",
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]

@@ -1,0 +1,50 @@
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# --- tooling ----------------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# --- editors / OS -----------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- QC build outputs (never commit) ----------------------------------------
+derivatives/
+*-qc/
+tongue-seg-qc/
+qcbuild/
+*.zip
+# tongue_qc/ is the source package, not a build output.
+!tongue_qc/
+
+# --- ratings and imaging data (never commit) --------------------------------
+*ratings*.csv
+tongue_qc_ratings.csv*
+*.csv.bak
+*.csv.tmp
+*.nii
+*.nii.gz
+
+# Exceptions: the header-only template and any small fixture CSVs under tests/.
+!ratings_template.csv
+!tests/**/*.csv

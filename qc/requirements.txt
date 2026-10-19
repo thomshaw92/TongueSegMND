@@ -1,0 +1,9 @@
+# Tongue-QC runtime dependencies.
+
+numpy>=2.2.6
+nibabel>=5.3.2
+scipy>=1.16.1
+Pillow>=11.3.0
+
+# Tests (also the "test" extra in pyproject.toml).
+pytest>=8.4.2

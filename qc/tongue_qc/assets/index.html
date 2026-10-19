@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tongue-QC</title>
+<style>
+{{CSS}}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <main id="viewer">
+    <div id="focusbar">
+      <span class="fb-arrow">&#9654;</span>
+      <span class="fb-text" id="fb-text">next digit &rarr; MRI quality</span>
+      <span class="fb-sub" id="fb-sub"></span>
+      <span id="fbtools">
+        <button type="button" id="vchip" title="viewer density (v)">view: both</button>
+        <button type="button" id="ckchip" class="idle" title="checkpoint status &mdash; click for the full panel"><span id="ckchiptext">starting</span></button>
+      </span>
+    </div>
+    <!-- Tooth-artefact follow-ups; fixed-position, outside fitViewer()'s layout. -->
+    <div id="toothask" hidden role="dialog" aria-live="assertive" aria-label="tooth artefact follow-up">
+      <span class="ta-step" id="ta-step">1 / 2</span>
+      <div class="ta-main">
+        <div class="ta-lead">tooth artefact &mdash; answer to continue</div>
+        <div class="ta-q" id="ta-q"></div>
+        <div class="ta-sub" id="ta-sub"></div>
+      </div>
+      <div class="ta-keys">
+        <button type="button" class="ta-btn yes" id="ta-yes">Y<small>yes</small></button>
+        <button type="button" class="ta-btn no" id="ta-no">N<small>no</small></button>
+        <button type="button" class="ta-btn skip" id="ta-skip">Esc<small>skip</small></button>
+      </div>
+    </div>
+    <div id="planes"></div>
+    <section id="qcpanel" hidden>
+      <h2>pipeline qc.png <kbd>q</kbd></h2>
+      <img id="qcimg" alt="pipeline QC montage">
+      <p id="qcmissing" class="hidden" style="color:#9aa7b4">No pipeline qc.png for this scan.</p>
+    </section>
+    <div id="viewer-empty" class="hidden">No scans in this build.</div>
+  </main>
+
+  <aside id="side">
+
+    <div id="title">
+      <b>Tongue-QC</b><span id="buildmeta"></span>
+    </div>
+
+    <div class="card">
+      <div id="nav">
+        <button class="btn" id="prev" title="previous scan (Left arrow)">&larr;</button>
+        <div class="counter"><span id="counter">0 / 0</span><small id="badgewrap"></small></div>
+        <button class="btn" id="next" title="next scan (Right arrow)">&rarr;</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="scanid">&mdash;</div>
+      <div id="scanmeta"></div>
+      <div id="scanflags"></div>
+    </div>
+
+    <div class="card" id="ratecard">
+      <div class="rate" id="rate-mri" data-scale="mri">
+        <div class="rate-hd">
+          <span class="rate-name">MRI quality</span>
+          <span class="rate-cue" id="cue-mri"></span>
+          <span class="rate-val empty" id="val-mri">&ndash;</span>
+        </div>
+        <div class="btns" id="btns-mri"></div>
+      </div>
+      <div class="rate" id="rate-seg" data-scale="seg">
+        <div class="rate-hd">
+          <span class="rate-name">Seg quality</span>
+          <span class="rate-cue" id="cue-seg"></span>
+          <span class="rate-val empty" id="val-seg">&ndash;</span>
+        </div>
+        <div class="btns" id="btns-seg"></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="autoadv" checked> auto-advance after both <kbd>a</kbd></label>
+      <div id="toothrow">
+        <button class="btn" type="button" id="toothbtn" aria-pressed="false"
+                title="dental / metal artefact on this scan (t) — then y/n for volume and shape">tooth artefact <kbd>t</kbd></button>
+        <span id="toothchip" class="toothchip" hidden></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>notes <kbd>n</kbd></h2>
+      <textarea id="notes" placeholder="free text (Esc to leave)"></textarea>
+    </div>
+
+    <div class="card">
+      <h2>progress</h2>
+      <div id="progtext">0 / 0 rated</div>
+      <div id="bar"><div id="barfill"></div></div>
+      <div id="progsub"></div>
+    </div>
+
+    <div class="card">
+      <h2>display</h2>
+      <div class="ctl"><label for="opacity">overlay <kbd>[</kbd><kbd>]</kbd></label><input type="range" id="opacity" min="0" max="100" step="5" value="55"><output id="opacityv">55%</output></div>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="btn" id="ovmode" title="fill / contour (o)">overlay: fill</button>
+        <button class="btn" id="qctoggle" title="pipeline qc.png (q)">qc.png</button>
+        <button class="btn" id="mtoggle" title="metrics (m)">metrics</button>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:#6c7885">hold <kbd>h</kbd> to hide the overlay &middot; <kbd>v</kbd> cycles density &middot; click a strip for full resolution</div>
+    </div>
+
+    <div class="card hidden" id="metricspanel">
+      <h2>metrics &amp; post-processing <kbd>m</kbd></h2>
+      <table id="metricstable"></table>
+      <details style="margin-top:6px"><summary>all metrics</summary><table id="metricsall"></table></details>
+    </div>
+
+    <div class="card" id="scalecard">
+      <h2>rating scale <kbd>s</kbd></h2>
+      <div class="legend" id="scalelegend">
+        <b>1</b><span>unusable / unacceptable &mdash; fail</span>
+        <b>2</b><span>poor &mdash; fail (MRI: fail or check)</span>
+        <b>3</b><span>moderate &mdash; pass (MRI: pass + check)</span>
+        <b>4</b><span>good &mdash; pass</span>
+        <b>5</b><span>excellent &mdash; pass</span>
+      </div>
+      <button class="btn wide" id="scaleopen" style="margin-top:8px">Open the full anchors <kbd>s</kbd></button>
+      <details id="scaledetails" style="margin-top:8px">
+        <summary>anchors (inline)</summary>
+        <div id="scalebody">{{SCALE}}</div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>labels</h2>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--lab1)"></i></span><span>1 vertical</span>
+        <span><i class="swatch" style="background:var(--lab2)"></i></span><span>2 sup. longitudinal</span>
+        <span><i class="swatch" style="background:var(--lab3)"></i></span><span>3 inf. longitudinal</span>
+        <span><i class="swatch" style="background:var(--lab4)"></i></span><span>4 genioglossus</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>keys</h2>
+      <div class="hints">
+        <span><kbd>1</kbd>&ndash;<kbd>5</kbd></span><span>fill the highlighted scale</span>
+        <span><kbd>&rarr;</kbd><kbd>&larr;</kbd></span><span>next / previous scan</span>
+        <span><kbd>&#9003;</kbd></span><span>undo: tooth &rarr; seg &rarr; mri &rarr; back</span>
+        <span><kbd>t</kbd></span><span>tooth artefact on/off (any time)</span>
+        <span><kbd>y</kbd><kbd>n</kbd></span><span>answer the tooth follow-up</span>
+        <span><kbd>a</kbd></span><span>auto-advance on/off</span>
+        <span><kbd>o</kbd></span><span>fill &harr; contour</span>
+        <span><kbd>[</kbd><kbd>]</kbd></span><span>overlay opacity</span>
+        <span><kbd>h</kbd></span><span>hold to hide overlay</span>
+        <span><kbd>v</kbd></span><span>density: both / overlay / focus</span>
+        <span><kbd>s</kbd></span><span>rating anchors</span>
+        <span><kbd>q</kbd></span><span>pipeline qc.png</span>
+        <span><kbd>m</kbd></span><span>metrics panel</span>
+        <span><kbd>n</kbd></span><span>notes (Esc leaves) &mdash; unless a tooth question is open</span>
+        <span><kbd>f</kbd></span><span>next unrated</span>
+        <span><kbd>Esc</kbd></span><span>close / blur</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>rater</h2>
+      <input type="text" id="rater" placeholder="your name or initials" style="width:100%">
+    </div>
+
+    <div class="card">
+      <h2>checkpointing</h2>
+      <div id="ckstatus" class="idle"><span id="cktier">starting</span><br><span id="ckmsg">&hellip;</span></div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="btn" id="connectcsv">Connect CSV&hellip;</button>
+        <button class="btn" id="savenow">Save now</button>
+      </div>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="btn" id="export">Export CSV</button>
+        <button class="btn" id="loadbtn">Load CSV&hellip;</button>
+      </div>
+      <input type="file" id="loadfile" accept=".csv,text/csv" class="hidden">
+      <div class="ctl" style="grid-template-columns:1fr 62px;margin-top:8px">
+        <label for="ckevery">auto-download every N ratings</label>
+        <!-- keep value equal to the checkpointEvery default in app.js -->
+        <input type="number" id="ckevery" min="1" max="500" step="1" value="100">
+      </div>
+      <details style="margin-top:6px">
+        <summary>copy-paste CSV</summary>
+        <textarea id="csvbox" readonly spellcheck="false"></textarea>
+        <div class="btnrow" style="margin-top:6px">
+          <button class="btn" id="fillcsv">Refresh</button>
+          <button class="btn" id="copycsv">Copy</button>
+        </div>
+      </details>
+    </div>
+
+  </aside>
+</div>
+
+<div id="lightbox" hidden><img id="lbimg" alt=""></div>
+
+<div id="scaleover" hidden>
+  <div class="so-panel" role="dialog" aria-label="rating anchors">
+    <div class="so-hd">
+      <span>rating anchors</span>
+      <button class="btn" id="scaleclose">close <kbd>Esc</kbd></button>
+    </div>
+    <div id="scaleoverbody"></div>
+  </div>
+</div>
+
+<script>
+const MANIFEST = {{MANIFEST}};
+const RATER = {{RATER}};
+const SEED_RATINGS = {{SEED_RATINGS}};
+</script>
+<script>
+{{JS}}
+</script>
+
+<script>
+/* Tongue-QC viewer bootstrap: strip sizing, density (`v`), rating anchors (`s`),
+   per-mode overlay opacity and the focus-bar checkpoint chip. Talks to app.js
+   only through the DOM. */
+(function () {
+  'use strict';
+
+  var LAYOUT_KEY = 'tongueqc_v1__layout';
+  var PLANES = ['sagittal', 'coronal', 'axial'];
+  var DENSITIES = ['both', 'overlay', 'focus'];
+  var DENSITY_LABEL = { both: 'both', overlay: 'overlay only', focus: 'focus' };
+  var VIEWER_PAD_BOTTOM = 6;      /* keep in step with #viewer padding in app.css */
+  var FOCUSBAR_GAP = 10;          /* #focusbar margin-bottom */
+  var PLANE_GAP = 6;              /* .plane margin-bottom */
+  var ROW_GAP = 3;                /* .rows gap */
+  var SAFETY = 4;
+
+  function $(id) { return document.getElementById(id); }
+
+  var state = { density: 'both', plane: 'sagittal', opFill: 40, opContour: 100 };
+
+  function loadState() {
+    try {
+      var raw = localStorage.getItem(LAYOUT_KEY);
+      if (!raw) return;
+      var v = JSON.parse(raw);
+      if (v && DENSITIES.indexOf(v.density) >= 0) state.density = v.density;
+      if (v && PLANES.indexOf(v.plane) >= 0) state.plane = v.plane;
+      if (v && isFinite(v.opFill)) state.opFill = Math.max(0, Math.min(100, v.opFill | 0));
+      if (v && isFinite(v.opContour)) state.opContour = Math.max(0, Math.min(100, v.opContour | 0));
+    } catch (e) { /* private mode / quota: defaults are fine */ }
+  }
+
+  function saveState() {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  }
+
+  /* ---------------------------------------------------- fit the viewer */
+
+  var pending = false;
+  var mo = null;
+
+  function parseAR(row) {
+    var v = row.style.aspectRatio || '';
+    var m = /([\d.]+)\s*\/\s*([\d.]+)/.exec(v);
+    if (m) {
+      var w = parseFloat(m[1]), h = parseFloat(m[2]);
+      if (w > 0 && h > 0) return w / h;
+    }
+    var f = parseFloat(v);
+    return (f > 0) ? f : 0;
+  }
+
+  function fitViewer() {
+    var viewer = $('viewer'), host = $('planes'), bar = $('focusbar');
+    if (!viewer || !host || !bar) return;
+
+    var all = [].slice.call(host.querySelectorAll('.plane'));
+    if (!all.length) return;
+
+    /* focus mode shows exactly one plane; the class drives the CSS */
+    var wantFocus = (state.density === 'focus');
+    var focusIdx = Math.max(0, PLANES.indexOf(state.plane));
+    all.forEach(function (p, i) { p.classList.toggle('focused', wantFocus && i === focusIdx); });
+
+    var planes = wantFocus ? [all[Math.min(focusIdx, all.length - 1)]] : all;
+    var rowsPerPlane = (state.density === 'overlay') ? 1 : 2;
+
+    var availW = Math.max(80, viewer.clientWidth - 28);
+    var overhead = bar.offsetHeight + FOCUSBAR_GAP + VIEWER_PAD_BOTTOM + SAFETY;
+    planes.forEach(function (p) {
+      var hd = p.querySelector('.plane-hd');
+      overhead += (hd ? hd.offsetHeight : 0) + PLANE_GAP + (rowsPerPlane - 1) * ROW_GAP;
+    });
+
+    var availH = Math.max(60, viewer.clientHeight - overhead);
+    var nRows = planes.length * rowsPerPlane;
+
+    /* Per-plane ceiling: column width; outside focus mode, no upscaling. */
+    var items = planes.map(function (p) {
+      var row = p.querySelector('.row');
+      var ar = row ? parseAR(row) : 0;
+      var natW = parseFloat(p.style.maxWidth) || 0;
+      var cap = ar > 0 ? availW / ar : availH;
+      if (!wantFocus && ar > 0 && natW > 0) cap = Math.min(cap, natW / ar);
+      return { plane: p, cap: Math.max(24, cap) };
+    });
+
+    /* Water-fill: tight planes take their ceiling, the rest share what is left. */
+    var order = items.slice().sort(function (a, b) { return a.cap - b.cap; });
+    var remaining = availH, rowsLeft = nRows;
+    order.forEach(function (it) {
+      var share = remaining / Math.max(1, rowsLeft);
+      it.h = Math.max(24, Math.floor(Math.min(it.cap, share)));
+      remaining -= it.h * rowsPerPlane;
+      rowsLeft -= rowsPerPlane;
+    });
+
+    items.forEach(function (it) {
+      var px = it.h + 'px';
+      if (it.plane.style.getPropertyValue('--rowh') !== px) {
+        it.plane.style.setProperty('--rowh', px);
+      }
+    });
+    /* hidden planes must not keep a stale --rowh from another density */
+    all.forEach(function (p) {
+      if (planes.indexOf(p) < 0) p.style.removeProperty('--rowh');
+    });
+
+    if (mo) mo.takeRecords();   /* discard our own writes: no observer feedback loop */
+  }
+
+  /* Run on the next frame or after 32 ms, whichever comes first. */
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    var done = false;
+    var run = function () {
+      if (done) return;
+      done = true;
+      pending = false;
+      fitViewer();
+    };
+    if (window.requestAnimationFrame) window.requestAnimationFrame(run);
+    setTimeout(run, 32);
+  }
+
+  function watchLayout() {
+    var host = $('planes');
+    if (!host) return;
+    if (window.MutationObserver) {
+      mo = new MutationObserver(schedule);
+      mo.observe(host, { attributes: true, subtree: true, childList: true,
+                         attributeFilter: ['style', 'class'] });
+    }
+    if (window.ResizeObserver) {
+      new ResizeObserver(schedule).observe($('viewer'));
+      new ResizeObserver(schedule).observe($('focusbar'));
+    }
+    window.addEventListener('resize', schedule);
+    window.addEventListener('orientationchange', schedule);
+    /* no ResizeObserver: poll instead */
+    if (!window.ResizeObserver) setInterval(schedule, 700);
+  }
+
+  /* ------------------------------------------------------ density modes */
+
+  function syncDensity() {
+    document.body.setAttribute('data-density', state.density);
+    var chip = $('vchip');
+    if (chip) chip.textContent = 'view: ' + DENSITY_LABEL[state.density];
+    fitViewer();   /* synchronous: `v` must resize in the same frame it toggles */
+    schedule();
+  }
+
+  function setDensity(d) {
+    if (DENSITIES.indexOf(d) < 0) return;
+    state.density = d;
+    saveState();
+    syncDensity();
+  }
+
+  function cycleDensity() {
+    setDensity(DENSITIES[(DENSITIES.indexOf(state.density) + 1) % DENSITIES.length]);
+  }
+
+  /* ------------------------------------------ per-mode overlay opacity */
+
+  function curMode() {
+    var b = $('ovmode');
+    return (b && b.classList.contains('on')) ? 'contour' : 'fill';
+  }
+
+  function applyModeOpacity() {
+    var mode = curMode();
+    document.body.setAttribute('data-ovmode', mode);
+    var want = (mode === 'contour') ? state.opContour : state.opFill;
+    var sl = $('opacity');
+    if (!sl) return;
+    if (parseInt(sl.value, 10) !== want) {
+      sl.value = String(want);
+      sl.dispatchEvent(new Event('input', { bubbles: true }));
+      sl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  function rememberOpacity() {
+    var sl = $('opacity');
+    if (!sl) return;
+    var v = parseInt(sl.value, 10);
+    if (!isFinite(v)) return;
+    if (curMode() === 'contour') state.opContour = v; else state.opFill = v;
+    saveState();
+  }
+
+  function watchOverlayMode() {
+    var b = $('ovmode');
+    if (!b) return;
+    if (window.MutationObserver) {
+      new MutationObserver(applyModeOpacity)
+        .observe(b, { attributes: true, attributeFilter: ['class'] });
+    }
+    var sl = $('opacity');
+    if (sl) sl.addEventListener('input', rememberOpacity);
+    /* `[` / `]` move the slider from app.js without firing `input` */
+    document.addEventListener('keyup', function (e) {
+      if (e.code === 'BracketLeft' || e.code === 'BracketRight') rememberOpacity();
+    });
+  }
+
+  /* ------------------------------------- checkpoint chip in the focus bar */
+
+  function mirrorStatus() {
+    var box = $('ckstatus'), chip = $('ckchip'), txt = $('ckchiptext');
+    if (!box || !chip || !txt) return;
+    var kind = (box.className || 'idle').trim().split(/\s+/)[0] || 'idle';
+    chip.className = kind;
+    var tier = ($('cktier') && $('cktier').textContent) || '';
+    var msg = ($('ckmsg') && $('ckmsg').textContent) || '';
+    var short = kind === 'ok' ? 'saved' : kind === 'err' ? 'NOT SAVED' :
+                kind === 'warn' ? 'browser only' : 'starting';
+    txt.textContent = short;
+    chip.title = (tier ? tier + ' — ' : '') + msg;
+  }
+
+  function watchStatus() {
+    var box = $('ckstatus');
+    if (!box) return;
+    mirrorStatus();
+    if (window.MutationObserver) {
+      new MutationObserver(mirrorStatus).observe(box, {
+        attributes: true, childList: true, subtree: true, characterData: true
+      });
+    } else {
+      setInterval(mirrorStatus, 1000);
+    }
+    var chip = $('ckchip');
+    if (chip) {
+      chip.addEventListener('click', function (ev) {
+        box.scrollIntoView({ block: 'center' });
+        ev.currentTarget.blur();
+      });
+    }
+  }
+
+  /* ------------------------------------------- the rating anchors panel */
+
+  function scaleFilled() {
+    var body = $('scalebody');
+    if (!body) return false;
+    var t = (body.textContent || '').trim();
+    /* an unsubstituted placeholder counts as empty */
+    if (!t || t.indexOf('{{SCALE') === 0) return false;
+    return t.length > 40;
+  }
+
+  function initScale() {
+    var body = $('scalebody'), det = $('scaledetails'), open = $('scaleopen');
+    if (!body) return;
+    if (!scaleFilled()) {
+      /* no anchors embedded: keep the card's short legend and point at the .md */
+      while (body.firstChild) body.removeChild(body.firstChild);
+      var p = document.createElement('p');
+      p.textContent = 'The full anchors were not embedded in this build — see ' +
+        'TONGUE_QC_SCALE.md next to this file. Score the WORST defect you can see, ' +
+        'not the average; if you cannot choose in three seconds take the lower score ' +
+        'and leave a note.';
+      body.appendChild(p);
+      if (det) det.hidden = true;
+      if (open) open.hidden = true;
+      return;
+    }
+    var over = $('scaleoverbody');
+    if (over) over.innerHTML = body.innerHTML;
+    if (open) open.addEventListener('click', function (ev) { openScale(); ev.currentTarget.blur(); });
+    var close = $('scaleclose');
+    if (close) close.addEventListener('click', function (ev) { closeScale(); ev.currentTarget.blur(); });
+    var over2 = $('scaleover');
+    if (over2) {
+      over2.addEventListener('click', function (e) { if (e.target === over2) closeScale(); });
+    }
+  }
+
+  function scaleOpen() {
+    var o = $('scaleover');
+    return !!(o && !o.hidden);
+  }
+  function openScale() { var o = $('scaleover'); if (o && scaleFilled()) o.hidden = false; }
+  function closeScale() { var o = $('scaleover'); if (o) o.hidden = true; }
+
+  /* ------------------------------------------------------------- keys */
+
+  function isTyping(e) {
+    var t = e.target;
+    if (!t) return false;
+    var tag = t.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable === true;
+  }
+
+  /* Capture phase: while the slide-over is open, keys must not reach app.js. */
+  function onKeyCapture(e) {
+    if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (scaleOpen()) {
+      if (e.code === 'Escape' || e.code === 'KeyS') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeScale();
+        return;
+      }
+      e.stopPropagation();
+      return;
+    }
+    if (e.code === 'KeyV') {
+      e.preventDefault();
+      e.stopPropagation();
+      cycleDensity();
+    } else if (e.code === 'KeyS') {
+      e.preventDefault();
+      e.stopPropagation();
+      openScale();
+    }
+  }
+
+  /* ------------------------------------------------------------- init */
+
+  function init() {
+    loadState();
+    syncDensity();
+
+    var chip = $('vchip');
+    if (chip) chip.addEventListener('click', function (ev) { cycleDensity(); ev.currentTarget.blur(); });
+
+    initScale();
+    watchStatus();
+    watchOverlayMode();
+    applyModeOpacity();
+    watchLayout();
+
+    window.addEventListener('keydown', onKeyCapture, true);
+
+    fitViewer();
+    setTimeout(fitViewer, 60);
+    setTimeout(fitViewer, 400);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+
+</body>
+</html>
