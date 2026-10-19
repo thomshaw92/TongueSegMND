@@ -1,0 +1,13 @@
+# imaging data
+*.nii
+*.nii.gz
+*.mgz
+data/
+# generated test fixtures
+tools/golden/
+# screenshots
+tools/*.png
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store

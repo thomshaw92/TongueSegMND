@@ -1,0 +1,13 @@
+{
+  "name": "tongue-postproc-qa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Client-side, in-browser QA for tongue-muscle segmentation post-processing",
+  "scripts": {
+    "pretest": "python3 tools/gen_golden.py",
+    "test": "node --test",
+    "golden": "python3 tools/gen_golden.py",
+    "serve": "python3 -m http.server 8000 --directory web"
+  }
+}

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tongue Post-processing QA</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@niivue/niivue@0.44.2/dist/niivue.umd.js"></script>
+</head>
+<body>
+<header>
+  <h1>Tongue segmentation post-processing QA</h1>
+  <p class="sub">Load a T1w or Spine-T2w image and its segmentation, toggle the
+  post-processing steps, and see the result live. Everything runs in your browser;
+  your images never leave your machine.</p>
+</header>
+
+<main>
+  <section class="panel controls">
+    <h2>1. Load</h2>
+    <label class="file">Image (.nii/.nii.gz)
+      <input type="file" id="imageFile" accept=".nii,.nii.gz,.gz">
+    </label>
+    <label class="file">Segmentation (.nii/.nii.gz)
+      <input type="file" id="labelFile" accept=".nii,.nii.gz,.gz">
+    </label>
+    <p id="status" class="status">Waiting for both files.</p>
+
+    <h2>2. Post-processing steps</h2>
+    <div class="step">
+      <label><input type="checkbox" id="thin"> Sup-long thin (gentle, depth only)</label>
+      <div class="sub-ctrl">keep <input type="range" id="keepFrac" min="0.6" max="1" step="0.01" value="0.88">
+        <span id="keepFracV">0.88</span> of sup-long</div>
+    </div>
+    <div class="step">
+      <label><input type="checkbox" id="inferiorClip"> Inferior clip (sup-long not below vertical)</label>
+    </div>
+    <div class="step">
+      <label><input type="checkbox" id="surfaceTrim"> Surface trim (tissue-band)</label>
+      <div class="sub-ctrl">k <input type="range" id="trimK" min="0.8" max="3" step="0.1" value="1.5">
+        <span id="trimKV">1.5</span>
+        <label class="inline"><input type="checkbox" id="trimAll" checked> all muscles</label></div>
+    </div>
+    <div class="step">
+      <label><input type="checkbox" id="clean"> Clean (erode, largest-CC, dilate)</label>
+      <div class="sub-ctrl">iters <input type="range" id="cleanIters" min="1" max="3" step="1" value="1">
+        <span id="cleanItersV">1</span></div>
+    </div>
+    <div class="step">
+      <label><input type="checkbox" id="smooth"> Smooth (Gaussian probabilistic majority)</label>
+      <div class="sub-ctrl">sigma <input type="range" id="sigma" min="0.4" max="2.5" step="0.1" value="1.5">
+        <span id="sigmaV">1.5</span></div>
+    </div>
+    <div class="preset">
+      <button id="presetGentle">Gentle preset</button>
+      <button id="presetReset">Reset (raw)</button>
+    </div>
+
+    <h2>3. QC</h2>
+    <table id="qc" class="qc">
+      <tr><td>sup-long / tongue</td><td id="qcRatio">-</td><td class="norm">norm 0.31 (0.24-0.39)</td></tr>
+      <tr><td>sup-long not-tissue</td><td id="qcSlNt">-</td><td class="norm">lower is better</td></tr>
+      <tr><td>tongue not-tissue</td><td id="qcFgNt">-</td><td class="norm">high = check scan</td></tr>
+      <tr><td>sup-long volume</td><td id="qcVol">-</td><td class="norm">mL</td></tr>
+    </table>
+
+    <h2>4. Save</h2>
+    <button id="download" disabled>Download corrected labels</button>
+    <button id="downloadRecipe" disabled>Download recipe.json</button>
+  </section>
+
+  <section class="panel viewer">
+    <div id="nv"><canvas id="gl"></canvas></div>
+  </section>
+</main>
+
+<footer>
+  <p>Label colours: red vertical, green superior-long, blue inferior-long, gold
+  genioglossus.</p>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
