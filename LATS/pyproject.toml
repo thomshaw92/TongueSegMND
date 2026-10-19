@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lats"
+version = "0.1.0"
+description = "Longitudinal Automatic Tongue Segmentation (Nipype workflow)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Thom Shaw" }]
+dependencies = [
+    "nipype>=1.8",
+    "nibabel>=5.0",
+    "numpy>=1.24",
+    "scipy>=1.10",        # smoothing, gradients
+    "scikit-image>=0.20", # marching cubes: surface area, sphericity, STL
+    "matplotlib>=3.6",    # QC montages
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+lats = "lats.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lats"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,69 @@
+# Combined LATS + tongue-segmenter container: the ANTs CLI, the segmenter and
+# LATS, which runs the segmenter in-process (--runtime native).
+#
+# Build from the root of a SegMRI checkout (run_tongue_pipeline.py, utils/,
+# make_cropping_roi.py, download_assets.py, docker/requirements-tongue.txt)
+# with this LATS/ folder copied into it:
+#   docker buildx build --platform linux/amd64 -f LATS/docker/Dockerfile.lats \
+#       -t lats-tongue:amd64 --load .
+#
+# Run (LATS_PIPELINE and LATS_ATLAS_DIR are set, so no --pipeline or --atlas-dir):
+#   apptainer run lats-tongue.sif -o out/ \
+#       --n4 --denoise --prior-refine \
+#       sub-01_ses-01_T1w.nii.gz sub-01_ses-02_T1w.nii.gz
+
+# --- ANTs CLI (prebuilt) ---------------------------------------------------
+FROM antsx/ants:v2.5.4 AS ants
+
+# --- combined image --------------------------------------------------------
+FROM python:3.10-slim
+
+# ANTs binaries + its runtime libs.
+COPY --from=ants /opt/ants /opt/ants
+ENV ANTSPATH=/opt/ants/bin
+ENV PATH=/opt/ants/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 zlib1g bzip2 ca-certificates libpng16-16 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Python deps: the segmenter's (CPU torch/monai/antspyx/nibabel) + LATS's.
+COPY docker/requirements-tongue.txt /app/docker/requirements-tongue.txt
+RUN pip install --no-cache-dir -r /app/docker/requirements-tongue.txt
+RUN pip install --no-cache-dir \
+        "nipype>=1.8" "scipy>=1.10" "scikit-image>=0.20" "matplotlib>=3.6"
+
+# Tongue pipeline code + baked OSF assets (templates, ROI, weights).
+COPY utils/ /app/utils/
+COPY run_tongue_pipeline.py /app/run_tongue_pipeline.py
+COPY make_cropping_roi.py /app/make_cropping_roi.py
+COPY download_assets.py /app/download_assets.py
+ARG OSF_PROJECT=wt9fc
+ARG OSF_FOLDER=Templates-For-Network
+ARG OSF_WEIGHTS_PROJECT=u5hqa
+ARG OSF_WEIGHTS_FOLDER=models
+RUN python /app/download_assets.py \
+        --project "${OSF_PROJECT}" --folder "${OSF_FOLDER}" \
+        --weights-project "${OSF_WEIGHTS_PROJECT}" --weights-folder "${OSF_WEIGHTS_FOLDER}" \
+        --dest /app/assets/tongue
+# Fail the build if no model weights (.pt) were downloaded.
+RUN find /app/assets/tongue -name '*.pt' | grep -q . \
+    || (echo "ERROR: no model weights (.pt) were baked into the image" >&2 && false)
+
+# LATS package + the probabilistic-atlas prior assets.
+COPY LATS/lats/ /app/LATS/lats/
+COPY LATS/pyproject.toml LATS/README.md /app/LATS/
+COPY LATS/atlas-assets/ /app/LATS/atlas-assets/
+RUN pip install --no-cache-dir /app/LATS
+
+# The ANTs CLI needs its bundled ITK shared libs on the linker path.
+ENV LD_LIBRARY_PATH=/opt/ants/lib
+
+# Defaults so a bare `run` finds the in-image segmenter + atlas without flags.
+ENV LATS_PIPELINE=/app/run_tongue_pipeline.py
+ENV LATS_ATLAS_DIR=/app/LATS/atlas-assets
+
+ENTRYPOINT ["lats"]
+CMD ["--help"]
