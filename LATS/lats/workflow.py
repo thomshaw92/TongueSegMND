@@ -29,18 +29,18 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
 
     labels_file = str(write_labels_file(labels_path(config.output_prefix)))
 
-    # --- preprocess (N4 -> denoise) ----------------------------------------
+    # preprocess (N4 -> denoise)
     preprocess = build_preprocess(config)
 
-    # --- register each session to the template + crop ----------------------
+    # register each session to the template + crop
     prep_crop = build_prep_crop(config)
     wf.connect(preprocess, "preprocessed", prep_crop, "image")
 
-    # --- tongue-local N4 + denoise + isotropic on the crop -----------------
+    # tongue-local N4 + denoise + isotropic on the crop
     enhance = build_enhance_crop(config)
     wf.connect(prep_crop, "cropped", enhance, "cropped")
 
-    # --- single-subject template from the enhanced crops -------------------
+    # single-subject template from the enhanced crops
     if longitudinal:
         sst = build_sst(config)
         wf.connect(enhance, "enhanced", sst, "images")
@@ -51,11 +51,11 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
     wf.connect(sst, "template0", publish, "template")
     wf.connect(enhance, "enhanced", publish, "crop_reference")
 
-    # --- segment the cropped SST once --------------------------------------
+    # segment the cropped SST once
     segment = build_segment(config)
     wf.connect(publish, "template", segment, "template")
 
-    # --- atlas-prior refinement (opt-in) -----------------------------------
+    # atlas-prior refinement (opt-in)
     if config.prior_refine:
         reg_atlas = build_register_atlas(config)
         warp_priors = build_warp_priors(config)
@@ -70,19 +70,19 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
     else:
         sst_labels_source = (segment, "sst_segmentation")
 
-    # --- SST -> each cropped session ---------------------------------------
+    # SST -> each cropped session
     register = build_register(config)
     wf.connect(publish, "template", register, "sst")
     wf.connect(enhance, "enhanced", register, "timepoint_image")
 
-    # --- propagate SST labels to native ------------------------------------
+    # propagate SST labels to native
     warp_labels = build_warp_labels(config)
     wf.connect(sst_labels_source[0], sst_labels_source[1], warp_labels, "sst_labels")
     wf.connect(register, "affine", warp_labels, "affine")
     wf.connect(register, "inverse_warp", warp_labels, "inverse_warp")
     wf.connect(prep_crop, "affine_mat", warp_labels, "native_affine")
 
-    # --- log-Jacobian volumes (multi-session only) -------------------------
+    # log-Jacobian volumes (multi-session only)
     jacobian = None
     if config.jacobian and longitudinal:
         jacobian = build_jacobian(config)
@@ -93,7 +93,7 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
         wf.connect(sst_labels_source[0], sst_labels_source[1], jacobian, "sst_labels")
         wf.connect(prep_crop, "affine_mat", jacobian, "native_affine")
 
-    # --- stats --------------------------------------------------------------
+    # stats
     stats = build_stats(config)
     stats.inputs.labels_file = labels_file
     wf.connect(warp_labels, "warped_labels", stats, "warped_labels")
@@ -105,7 +105,7 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
     if jacobian is not None:
         wf.connect(jacobian, "volumes_file", aggregate, "jacobian_files")
 
-    # --- shape descriptors + lateralisation --------------------------------
+    # shape descriptors + lateralisation
     if config.shape:
         lateralise = build_lateralise(config)
         wf.connect(sst_labels_source[0], sst_labels_source[1], lateralise, "sst_labels")
@@ -132,7 +132,7 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
             meshes.inputs.labels_file = labels_file
             wf.connect(sst_labels_source[0], sst_labels_source[1], meshes, "sst_labels")
 
-    # --- QC -----------------------------------------------------------------
+    # QC
     if config.qc:
         qc = build_qc(config)
         if config.qc_preproc:

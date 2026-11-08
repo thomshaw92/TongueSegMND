@@ -1,24 +1,24 @@
 # Tongue-QC rating scale
 
-**Source of truth: Shaw et al. 2025, *Computers in Biology and Medicine* —
+**Source of truth: Shaw et al. 2025, *Computers in Biology and Medicine*,
 "Segmentation of the Human Tongue Musculature Using MRI: Field Guide and Validation in
 Motor Neuron Disease", Supplementary Materials, Appendix One, Table One.**
 
-The anchors below are that table verbatim. Do not paraphrase them — ratings made against
-reworded anchors are not comparable with the published work. Grades run **1–5**; there is
+The anchors below are that table verbatim. Do not paraphrase them: ratings made against
+reworded anchors are not comparable with the published work. Grades run **1 to 5**; there is
 no 0, because "unusable / tongue not visible" is already grade 1.
 
 Two independent scales per scan:
 
-- **MRI quality** — the raw image in the tongue region.
-- **Seg quality** — the 4-label tongue segmentation.
+- **MRI quality**: the raw image in the tongue region.
+- **Seg quality**: the 4-label tongue segmentation.
 
 Rate them independently: a segmentation that is as good as a bad image allows still gets its
-own honest seg score — the MRI scale is where the image is penalised.
+own honest seg score; the MRI scale is where the image is penalised.
 
 ---
 
-## Seg quality (1–5)
+## Seg quality (1 to 5)
 
 | | Anchor | Disposition |
 |---|---|---|
@@ -28,7 +28,7 @@ own honest seg score — the MRI scale is where the image is penalised.
 | **4** | **Good Quality.** The overall quality of the segmentation is good, with either minor errors present or perhaps one large error. However, these errors do not substantially impact the overall utility of the segmentation. | **Pass** |
 | **5** | **Excellent Quality.** Virtually error-free. It represents the anatomy accurately without any noticeable mistakes. | **Pass** |
 
-## MRI quality (1–5)
+## MRI quality (1 to 5)
 
 | | Anchor | Disposition |
 |---|---|---|
@@ -43,10 +43,10 @@ rule travels with the ratings instead of being re-derived downstream.
 
 ---
 
-## What to look for — landmarks from Appendix Two
+## What to look for: landmarks from Appendix Two
 
 The montage shows six frames per plane, sagittal / coronal / axial, with the plain image on
-top and the overlay beneath. Hold **`h`** to blink the overlay off — the fastest way to judge
+top and the overlay beneath. Hold **`h`** to blink the overlay off; it is the fastest way to judge
 a boundary. Press **`o`** for outlines instead of fill.
 
 Label colours follow the **pipeline**, not the paper's figures:
@@ -64,32 +64,32 @@ Label colours follow the **pipeline**, not the paper's figures:
 
 Shape cues from the guide, all checkable on these frames:
 
-- **Axial** — the superior longitudinal typically shows a **"W" shape**, becoming a larger
+- **Axial**: the superior longitudinal typically shows a **"W" shape**, becoming a larger
   sheet as you move superiorly, since the top of the tongue is superior longitudinal alone.
-- **Coronal** — look for the **"M" shape** of the superior longitudinal and transverse/vertical.
-- **Sagittal** — superior longitudinal is a band across the top quarter of the tongue,
+- **Coronal**: look for the **"M" shape** of the superior longitudinal and transverse/vertical.
+- **Sagittal**: superior longitudinal is a band across the top quarter of the tongue,
   beginning at the anterior-most portion of the palate. The transition to transverse/vertical
   below is where the band becomes speckled, or a bright line separates them. The air void of
   the oral cavity proper, between tongue and palate, **should not be labelled**.
 - The **inferior longitudinal** lies alongside the submandibular and sublingual salivary
   glands and the mylohyoid.
-- The **mylohyoid** forms the floor of the mouth and is *not* a tongue muscle — labelling it
+- The **mylohyoid** forms the floor of the mouth and is *not* a tongue muscle; labelling it
   is an error. Styloglossus and palatoglossus are deliberately outside the protocol.
 
 ---
 
-## Tooth artefact — press `t`
+## Tooth artefact (press `t`)
 
 Dental and orthodontic metal (fillings, crowns, brackets) produces a signal void with a bright
-rim, geometric distortion of the adjacent tongue border, and dropout following the dental arch
-— most obvious on axial and coronal.
+rim, geometric distortion of the adjacent tongue border, and dropout following the dental arch.
+It is most obvious on axial and coronal.
 
 `t` is a **separate axis from the two scales**. Still grade MRI and Seg on what you actually
 see; `t` records the *cause*, so it can be excluded later. After the second grade lands you get
 two questions:
 
-1. **Volume affected?** — yes if the artefact makes the segmentation include or omit tissue.
-2. **Shape affected?** — yes if it distorts the tongue border or its left/right symmetry, even
+1. **Volume affected?** Yes if the artefact makes the segmentation include or omit tissue.
+2. **Shape affected?** Yes if it distorts the tongue border or its left/right symmetry, even
    where the volume looks about right.
 
 These export as independent columns, so a scan can be dropped from the volume analysis and kept
@@ -100,5 +100,5 @@ for the shape analysis, or the reverse.
 ## When in doubt
 
 Score the **worst** defect you can see, not the average. If you are torn between two grades,
-take the lower one and leave a note (`n`) — a note costs seconds and makes the borderline cases
+take the lower one and leave a note (`n`); a note costs seconds and makes the borderline cases
 adjudicable later.

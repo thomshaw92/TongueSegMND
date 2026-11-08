@@ -15,9 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from tongue_qc.discovery import Scan
 
 
-# --------------------------------------------------------------------------- #
 # Constants
-# --------------------------------------------------------------------------- #
 
 #: Native-space grid: anisotropic, zoom ratio 1.6.
 NATIVE_SHAPE: tuple[int, int, int] = (40, 80, 80)
@@ -73,9 +71,7 @@ _POSTPROCESS = {
 }
 
 
-# --------------------------------------------------------------------------- #
 # Volume construction
-# --------------------------------------------------------------------------- #
 
 
 def diagonal_affine(
@@ -173,9 +169,7 @@ def _save(data: np.ndarray, affine: np.ndarray, path: Path) -> None:
     nib.save(nib.Nifti1Image(data, affine), str(path))
 
 
-# --------------------------------------------------------------------------- #
 # Scan-directory construction
-# --------------------------------------------------------------------------- #
 
 
 def build_scan_dir(
@@ -272,9 +266,7 @@ def scan_from_dir(path: Path, space: str = "native") -> "Scan":
     )
 
 
-# --------------------------------------------------------------------------- #
 # Fixtures: factories
-# --------------------------------------------------------------------------- #
 
 
 @pytest.fixture
@@ -324,9 +316,7 @@ def out_dir(tmp_path: Path) -> Path:
     return d
 
 
-# --------------------------------------------------------------------------- #
 # Fixtures: single scan variants
-# --------------------------------------------------------------------------- #
 
 
 @pytest.fixture
@@ -382,9 +372,7 @@ def zero_candidate_dir(scan_dir_factory: Callable[..., Path]) -> Path:
     return scan_dir_factory("ZERO001_1", source_names=())
 
 
-# --------------------------------------------------------------------------- #
 # Fixtures: study-tree layouts
-# --------------------------------------------------------------------------- #
 
 
 @pytest.fixture

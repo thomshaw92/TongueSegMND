@@ -26,9 +26,7 @@ from .discovery import Scan, find_scans, read_metrics, read_postprocess, select
 from .html import render_html
 from .montage import LABEL_COLORS, LABEL_NAMES, PLANES, render_scan
 
-# --------------------------------------------------------------------------
 # Constants
-# --------------------------------------------------------------------------
 
 SCHEMA_VERSION = "tongueqc_v1"
 HTML_NAME = "tongue_qc.html"
@@ -90,9 +88,7 @@ BYTES_PER_SCAN = 147_000
 PIPELINE_QC_BYTES_PER_SCAN = 37_000
 
 
-# --------------------------------------------------------------------------
 # Worker payloads (module level so they pickle)
-# --------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class RenderJob:
@@ -287,9 +283,7 @@ def render_job(job: RenderJob) -> RenderOutcome:
         )
 
 
-# --------------------------------------------------------------------------
 # Parent-side helpers
-# --------------------------------------------------------------------------
 
 def _make_log(verbose: bool) -> tuple[Callable[[str], None], Callable[[str], None]]:
     """Return ``(log, vlog)``; both flush so progress survives a pipe."""
@@ -425,7 +419,7 @@ def _render_all(jobs: Sequence[RenderJob], n_workers: int, collector: _Collector
             for job in jobs:
                 collector.add(render_job(job))
         except KeyboardInterrupt:
-            log("\ninterrupted — writing a manifest for what finished")
+            log("\ninterrupted: writing a manifest for what finished")
             return True
         return False
 
@@ -442,7 +436,7 @@ def _render_all(jobs: Sequence[RenderJob], n_workers: int, collector: _Collector
                 unfinished, pool_died, interrupted = _run_batch(
                     [job], 1, collector, log)
                 if interrupted:
-                    log("\ninterrupted — writing a manifest for what finished")
+                    log("\ninterrupted: writing a manifest for what finished")
                     return True
                 if not unfinished:
                     continue
@@ -452,13 +446,13 @@ def _render_all(jobs: Sequence[RenderJob], n_workers: int, collector: _Collector
                         job.scan_id, "worker vanished without a result")
                 elif attempts[job.scan_id] >= MAX_POOL_ATTEMPTS:
                     log(f"QUARANTINED {job.scan_id}: killed its worker process "
-                        f"{attempts[job.scan_id]}x — skipping it so the build finishes")
+                        f"{attempts[job.scan_id]}x; skipping it so the build finishes")
                     collector.fail_named(
                         job.scan_id,
                         f"{QUARANTINE_REASON}: killed its worker process "
                         f"{attempts[job.scan_id]} time(s)")
                 else:
-                    log(f"worker pool died on {job.scan_id} — retrying it alone")
+                    log(f"worker pool died on {job.scan_id}; retrying it alone")
                     pending.append(job)
                 pending.extend(batch[i + 1:])
                 isolate = False
@@ -467,7 +461,7 @@ def _render_all(jobs: Sequence[RenderJob], n_workers: int, collector: _Collector
 
         unfinished, pool_died, interrupted = _run_batch(batch, width, collector, log)
         if interrupted:
-            log("\ninterrupted — cancelling pending work and writing a partial manifest")
+            log("\ninterrupted: cancelling pending work and writing a partial manifest")
             return True
         if not unfinished:
             continue
@@ -476,11 +470,11 @@ def _render_all(jobs: Sequence[RenderJob], n_workers: int, collector: _Collector
         if pool_died:
             worst = max(attempts.get(j.scan_id, 0) for j in unfinished)
             isolate = worst >= MAX_POOL_ATTEMPTS or len(unfinished) == 1
-            log(f"worker pool died — rebuilding it and retrying {len(unfinished)} "
+            log(f"worker pool died; rebuilding it and retrying {len(unfinished)} "
                 f"scan(s)" + (" one at a time to find the culprit" if isolate else ""))
         else:  # pragma: no cover - a pool that neither died nor delivered
             isolate = True
-            log(f"{len(unfinished)} scan(s) produced no result — retrying them "
+            log(f"{len(unfinished)} scan(s) produced no result; retrying them "
                 "one at a time")
         pending.extend(unfinished)
     return False
@@ -535,10 +529,10 @@ def _read_seed_csv(path: Path, log: Callable[[str], None]) -> str:
                     or (row.get("tooth_artefact") or "").strip() == "1"):
                 n += 1
     except (ValueError, csv.Error) as exc:
-        log(f"WARNING: --seed-csv {path} is not a readable CSV ({exc}) — ignored")
+        log(f"WARNING: --seed-csv {path} is not a readable CSV ({exc}); ignored")
         return ""
     if n == 0:
-        log(f"WARNING: --seed-csv {path} holds no usable ratings — ignored")
+        log(f"WARNING: --seed-csv {path} holds no usable ratings; ignored")
         return ""
     log(f"seeded {n} existing rating(s) from {path}")
     return text
@@ -702,7 +696,7 @@ def _scale_html(pkg_root: Path, log: Callable[[str], None]) -> tuple[str, Path |
         except OSError as exc:
             log(f"WARNING: could not read {candidate}: {exc}")
             return "", None
-    log(f"WARNING: {SCALE_DOC_NAME} not found at {candidate} — "
+    log(f"WARNING: {SCALE_DOC_NAME} not found at {candidate}; "
         "the app's scale panel will be empty")
     return "", None
 
@@ -710,7 +704,7 @@ def _scale_html(pkg_root: Path, log: Callable[[str], None]) -> tuple[str, Path |
 def _copy_support_file(src: Path, dst: Path, log: Callable[[str], None],
                        what: str) -> bool:
     if not src.is_file():
-        log(f"WARNING: {what} not found at {src} — the build will not include it")
+        log(f"WARNING: {what} not found at {src}; the build will not include it")
         return False
     shutil.copy2(src, dst)
     return True
@@ -849,8 +843,8 @@ def readme_text(manifest: Mapping[str, Any], size_bytes: int | None = None) -> s
     version = manifest.get("tool_version", __version__)
     total = size_bytes if size_bytes else n * BYTES_PER_SCAN
     size = _human_mb(total)
-    transfer = ("\nAt this size it is a file-transfer job — OneDrive/Dropbox/a USB\n"
-                "stick — not an email attachment." if total > 25_000_000 else "")
+    transfer = ("\nAt this size it is a file-transfer job (OneDrive, Dropbox or a USB\n"
+                "stick), not an email attachment." if total > 25_000_000 else "")
     ck_every = 100  # the default of settings.checkpointEvery in app.js
     n_qc = sum(1 for s in manifest.get("scans", ()) if s.get("has_pipeline_qc"))
     qc_note = ""
@@ -861,7 +855,7 @@ def readme_text(manifest: Mapping[str, Any], size_bytes: int | None = None) -> s
             f"{_human_mb(n_qc * PIPELINE_QC_BYTES_PER_SCAN)} of that,\n"
             "at ~37 KB a scan.)")
     return f"""\
-TONGUE QC — how to rate ({n} scans)
+TONGUE QC: how to rate ({n} scans)
 ==================================================================
 built {built} UTC   ·   tongue-qc {version}   ·   images in {space} space
 
@@ -880,18 +874,18 @@ saves almost nothing). Unzipping needs roughly {size} of free disk on
 top of the zip itself.{transfer}{qc_note}
 
 
-2. START IT — JUST DOUBLE-CLICK THE LAUNCHER
+2. START IT: DOUBLE-CLICK THE LAUNCHER
 ------------------------------------------------------------------
   macOS    double-click   {MAC_LAUNCHER_NAME}
   Windows  double-click   {WIN_LAUNCHER_NAME}
 
 Your browser opens by itself and you can start rating. A small
-terminal window appears as well — leave it open while you rate, and
+terminal window appears as well; leave it open while you rate, and
 close it when you are finished.
 
 That is the recommended way, because your ratings are then written
 straight to {RATINGS_CSV_NAME} in this folder after
-every single change — nothing to remember, nothing to lose. The
+every single change, so nothing is lost. The
 status line in the sidebar shows "checkpointing to disk" in green
 when this is working.
 
@@ -903,7 +897,7 @@ python.exe to PATH", or ask the study lead.)
 If the launchers will not run, you can still double-click
 {HTML_NAME} directly. Everything works except automatic saving,
 which then falls back to:
-  - "Connect CSV…" in the sidebar (Chrome/Edge) — pick a file once
+  - "Connect CSV…" in the sidebar (Chrome/Edge): pick a file once
     and every later change is written through to it with no further
     prompts. Do this first thing; it is as good as the server.
   - failing that, the Export CSV button, which you can press at any
@@ -911,11 +905,11 @@ which then falls back to:
     browser may block the repeat downloads, so do not rely on them).
 
 Either way your work is also kept in the browser's local storage,
-so closing the tab by accident does not lose anything — reopen the
+so closing the tab by accident does not lose anything. Reopen the
 same page in the same browser and carry on.
 
 
-3. THE FLOW — TWO KEYSTROKES PER SCAN
+3. THE FLOW: TWO KEYSTROKES PER SCAN
 ------------------------------------------------------------------
 For each scan you give two scores, both 1-5 (Shaw 2025 CIBM, Appendix One,
 Table One):
@@ -932,10 +926,10 @@ If you would rather not auto-advance, press "a" (or untick the
 checkbox) and use the arrow keys instead.
 
 Press "t" if the scan has DENTAL / METAL ARTEFACT (fillings,
-crowns, braces) — see section 5 below. It is a separate flag, not
+crowns, braces); see section 5 below. It is a separate flag, not
 a score, and you can press it at any point while the scan is up.
 
-The viewer shows three planes — sagittal, coronal, axial — each as
+The viewer shows three planes (sagittal, coronal, axial), each as
 a row of six slices spanning the segmentation, with the outer
 slices deliberately just past its edge so you can see whether the
 segmentation stops where the tongue stops. The top strip is the
@@ -947,7 +941,7 @@ image alone; the bottom strip has the labels drawn over it.
 The full key map is on the "keys" card in the app's sidebar.
 
 
-5. DENTAL / METAL ARTEFACT — THE "t" FLAG
+5. DENTAL / METAL ARTEFACT: THE "t" FLAG
 ------------------------------------------------------------------
 Fillings, crowns and orthodontic metal blow a black hole with a
 bright rim into the image, and it often lands right on the tongue.
@@ -957,7 +951,7 @@ the two scores.
 
 Press "t" whenever you can see dental/metal artefact touching or
 distorting the tongue. You can press it before the digits, between
-them, or after — and "t" again turns it off.
+them, or after, and "t" again turns it off.
 
 Still score MRI and Seg exactly as you see them. "t" does not
 replace a score; it records the CAUSE, so the analysis can drop
@@ -977,7 +971,7 @@ answered with "y" or "n":
         symmetry, even where the amount of tissue looks about
         right.
 
-Both answers can be "y", both can be "n", or one of each — they
+Both answers can be "y", both can be "n", or one of each; they
 are separate questions and they are used for separate analyses.
 After the second answer the app advances as usual.
 
@@ -987,7 +981,7 @@ the flag stays on and you can come back to it.
 
 6. WHAT THE TWO SCALES MEAN
 ------------------------------------------------------------------
-The anchors are in the app — press "s". Read them once before you
+The anchors are in the app: press "s". Read them once before you
 start, and again whenever you hesitate. (The same text is in
 {SCALE_DOC_NAME} next to this file.)
 
@@ -997,7 +991,7 @@ start, and again whenever you hesitate. (The same text is in
 Put your name in the "rater" box in the sidebar before you start,
 so the CSV says who graded what.
 
-  - Started from a launcher: the file is already there —
+  - Started from a launcher: the file is already there,
     {RATINGS_CSV_NAME} in this folder. Send that.
   - Otherwise: press "Export CSV" and send the file that downloads.
 
@@ -1008,13 +1002,11 @@ case you need one to point at.
 
 Please send the CSV back to the study lead, and mention anything
 systematic you noticed (a whole site looking soft, one label
-consistently wrong) — that is worth more than any single score.
+consistently wrong); that is worth more than any single score.
 """
 
 
-# --------------------------------------------------------------------------
 # CLI
-# --------------------------------------------------------------------------
 
 def _default_out(root: Path, deriv_name: str) -> Path:
     """``<root>/derivatives/<deriv>-qc``, unless root already *is* that deriv dir."""
@@ -1097,7 +1089,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                else _default_out(root, args.deriv_name))
     labels = tuple(dict.fromkeys(int(v) for v in args.labels))
 
-    # ---- discovery -------------------------------------------------------
+    # discovery
     scans, skipped_pairs = find_scans(root, args.deriv_name, args.space)
     skipped: list[tuple[str, str]] = [(str(a), str(b)) for a, b in skipped_pairs]
     log(f"found {len(scans)} scan(s) under {root}")
@@ -1126,7 +1118,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     images_root = out_dir / IMAGES_DIR
     images_root.mkdir(parents=True, exist_ok=True)
 
-    # ---- resume ----------------------------------------------------------
+    # resume
     cached: dict[str, dict[str, Any]] = {}
     todo: list[RenderJob] = []
     n_stale = 0
@@ -1171,10 +1163,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     records.update(collector.records)
     skipped.extend(collector.failures)
     if not records:
-        log("ERROR: nothing rendered successfully — no app written")
+        log("ERROR: nothing rendered successfully; no app written")
         return 1
 
-    # ---- manifest --------------------------------------------------------
+    # manifest
     ordered = sorted(records.values(), key=lambda r: order_of.get(r["scan_id"], 1 << 30))
     for i, record in enumerate(ordered):
         record["order"] = i
@@ -1220,7 +1212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "scans": ordered,
     }
 
-    # ---- build tree ------------------------------------------------------
+    # build tree
     seed_ratings = (_read_seed_csv(args.seed_csv.expanduser(), log)
                     if args.seed_csv is not None else "")
     pkg_root = Path(__file__).resolve().parent.parent
@@ -1261,7 +1253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if degraded:
         shown = ", ".join(degraded[:5]) + (" …" if len(degraded) > 5 else "")
         log(f"NOTE: {len(degraded)} scan(s) could not be rendered in the requested "
-            f"space and were degraded ({shown}) — manifest.space is what was "
+            f"space and were degraded ({shown}); manifest.space is what was "
             "actually rendered")
     if collector.failures:
         log(f"{len(collector.failures)} scan(s) failed and are NOT in the app:")
@@ -1270,7 +1262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     log(f"open it with:  double-click '{MAC_LAUNCHER_NAME}' "
         f"(or '{WIN_LAUNCHER_NAME}' on Windows) in {out_dir}")
     if cut_short:
-        log("NOTE: this build was cut short — re-run the same command to resume. "
+        log("NOTE: this build was cut short; re-run the same command to resume. "
             "The app above works, it just holds fewer scans.")
         return 130
     return 0

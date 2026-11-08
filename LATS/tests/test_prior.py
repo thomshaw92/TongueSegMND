@@ -87,7 +87,7 @@ def test_dilate_allows_bounded_promotion():
     assert info["promoted_voxels"] < 2000
 
 
-# --- posterior path: DL softmax probabilities as the likelihood -----------------
+# posterior path: DL softmax probabilities as the likelihood
 
 def _probs_from_labels(dl, fg_ids=(1, 2), conf=0.9):
     """A near-one-hot softmax consistent with the hard labels; channel [bg, *fg_ids]."""

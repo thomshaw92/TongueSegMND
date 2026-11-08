@@ -225,7 +225,7 @@ def _aggregate_shape(shape_files: list, output_dir: str) -> tuple[str, str]:
         w.writeheader()
         w.writerows(all_rows)
 
-    # ---- asymmetry.csv ----------------------------------------------------
+    # asymmetry.csv
     # Asymmetry index: (L - R) / ((L + R) / 2), unscaled.
     by = {}
     for r in all_rows:
@@ -268,7 +268,7 @@ def _aggregate_shape(shape_files: list, output_dir: str) -> tuple[str, str]:
 
 
 def _sst_meshes(sst_labels: str, labels_file: str, output_dir: str) -> list:
-    """Per-label STL of the SST — the subject's average shape."""
+    """Per-label STL of the SST, the subject's average shape."""
     from pathlib import Path as _P
 
     import nibabel as nib

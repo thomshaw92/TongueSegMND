@@ -71,7 +71,7 @@ def check_registration_affine(affine_mat: str, name: str) -> float:
     if not (AFFINE_DET_MIN <= det <= AFFINE_DET_MAX):
         raise CheckError(
             f"{name}: registration scale |det|={det:.3f} is outside the "
-            f"physiological band [{AFFINE_DET_MIN}, {AFFINE_DET_MAX}] — the "
+            f"physiological band [{AFFINE_DET_MIN}, {AFFINE_DET_MAX}]; the "
             f"transform has likely collapsed. Check the input and modality."
         )
     return det
@@ -122,7 +122,7 @@ def warn_header_consistency(images: list) -> list[str]:
     if len(set(shapes)) > 1:
         out.append(f"sessions differ in matrix size: {shapes}")
     if len(set(zooms)) > 1:
-        out.append(f"sessions differ in voxel size: {zooms} — expected with "
+        out.append(f"sessions differ in voxel size: {zooms}, expected with "
                    f"mixed protocols; preprocessing normalises to template")
     if len(set(ornts)) > 1:
         out.append(f"sessions differ in orientation: {ornts}")

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
-# --- pipeline file names ---------------------------------------------------
+# pipeline file names
 
 SEG_NATIVE = "seg_native.nii.gz"
 SEG_TEMPLATE = "seg_template.nii.gz"
@@ -59,7 +59,7 @@ class Scan:
     space: str
 
 
-# --- id parsing ------------------------------------------------------------
+# id parsing
 
 
 def parse_ids(name: str) -> tuple[str, str]:
@@ -82,7 +82,7 @@ def parse_ids(name: str) -> tuple[str, str]:
     return stem, "ses-01"
 
 
-# --- directory walking -----------------------------------------------------
+# directory walking
 
 
 def _listing(path: Path) -> tuple[set[str], list[str]] | None:
@@ -237,7 +237,7 @@ def find_scans(
     return scans, skipped
 
 
-# --- selection -------------------------------------------------------------
+# selection
 
 
 def select(
@@ -265,7 +265,7 @@ def select(
     return pool
 
 
-# --- side-car readers (never raise) ----------------------------------------
+# side-car readers (never raise)
 
 
 def read_metrics(scan: Scan) -> dict[str, str]:

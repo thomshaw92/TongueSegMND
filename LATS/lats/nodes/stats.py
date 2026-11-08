@@ -96,7 +96,7 @@ def _aggregate(
     seg_rows = [_read(p) for p in stats_files]
     jac_rows = [_read(p) for p in jacobian_files] if jacobian_files else []
 
-    # ---- volumes.csv ------------------------------------------------------
+    # volumes.csv
     volumes_path = od / "volumes.csv"
     fields = [
         "timepoint", "subject_id", "input", "label_id", "label",
@@ -143,7 +143,7 @@ def _aggregate(
         w.writeheader()
         w.writerows(records)
 
-    # ---- longitudinal.csv -------------------------------------------------
+    # longitudinal.csv
     # Change relative to tp00, by both routes.
     long_path = od / "longitudinal.csv"
     long_fields = [

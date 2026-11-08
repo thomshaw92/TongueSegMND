@@ -130,7 +130,7 @@ class QCRequestHandler(http.server.SimpleHTTPRequestHandler):
         self._store = store
         super().__init__(*args, **kwargs)
 
-    # -- plumbing ---------------------------------------------------------
+    # plumbing
     def guess_type(self, path: str | os.PathLike[str]) -> str:
         return CONTENT_TYPES.get(Path(path).suffix.lower(), "application/octet-stream")
 
@@ -159,7 +159,7 @@ class QCRequestHandler(http.server.SimpleHTTPRequestHandler):
     def _send_json(self, code: int, obj: dict[str, Any]) -> None:
         self._send_bytes(code, CONTENT_TYPES[".json"], json.dumps(obj).encode("utf-8"))
 
-    # -- endpoints --------------------------------------------------------
+    # endpoints
     def do_GET(self) -> None:  # noqa: N802  (stdlib naming)
         try:
             if self.path.split("?", 1)[0] == "/api/load":

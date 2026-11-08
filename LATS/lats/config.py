@@ -23,7 +23,7 @@ class LatsConfig:
     output_prefix: Path
     timepoints: list[Timepoint]
 
-    # --- segmenter -----------------------------------------------------------
+    # segmenter
     modality: str = "T1w"
     runtime: str = "auto"
     container: str | None = None        # docker tag or path to .sif
@@ -32,7 +32,7 @@ class LatsConfig:
     container_args: str = ""            # extra args spliced into docker/apptainer
     postproc: bool = True               # segmenter's anatomical clean-up
 
-    # --- template ------------------------------------------------------------
+    # template
     template_iterations: int = 2
     template_metric: str = "CC"
     template_transform: str = "SyN"
@@ -41,32 +41,32 @@ class LatsConfig:
     n4: bool = False
     denoise: bool = False            # DenoiseImage(rician) after N4, per session
 
-    # --- tongue-local crop + QC enhancement ---------------------------------
+    # tongue-local crop + QC enhancement
     crop_n4: bool = True
     crop_denoise: bool = True
     isotropic_mm: float = 1.0        # resample crop + QC image to this iso mm (0 = off)
     qc_preproc: bool = True          # build the re-preprocessed native QC image
 
-    # --- SST -> timepoint registration --------------------------------------
+    # SST -> timepoint registration
     reg_transform: str = "s"            # antsRegistrationSyN.sh -t
 
-    # --- execution -----------------------------------------------------------
+    # execution
     plugin: str = "Linear"
     n_procs: int = 2
     keep_tmp: bool = False
 
-    # --- optional stages -----------------------------------------------------
+    # optional stages
     jacobian: bool = True
     qc: bool = True
     shape: bool = True
     meshes: bool = True
 
-    # --- lateralisation ------------------------------------------------------
+    # lateralisation
     # Midline passes through this label's centroid (4 = genioglossus).
     midline_label: int = 4
     midline_mode: str = "centroid"   # 'centroid' | 'pca'
 
-    # --- atlas-prior refinement (FreeSurfer-aseg style) ---------------------
+    # atlas-prior refinement (FreeSurfer-aseg style)
     prior_refine: bool = False       # opt-in: refine the SST seg with the atlas
     atlas_dir: Path | None = None    # dir with atlas_foreground + atlas_prob_{1..4}
     atlas_reg_transform: str = "s"   # antsRegistrationSyN -t for atlas->tongue

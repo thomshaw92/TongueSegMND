@@ -4,9 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 
-# ---------------------------------------------------------------------------
 # Coordinates
-# ---------------------------------------------------------------------------
 
 def voxel_world_coords(mask: np.ndarray, affine: np.ndarray) -> np.ndarray:
     """World (mm) coordinates of every True voxel in ``mask``. Shape (N, 3)."""
@@ -21,9 +19,7 @@ def voxel_volume_mm3(affine: np.ndarray) -> float:
     return float(abs(np.linalg.det(affine[:3, :3])))
 
 
-# ---------------------------------------------------------------------------
 # Inertia / principal axes
-# ---------------------------------------------------------------------------
 
 def inertia_descriptors(coords: np.ndarray) -> dict:
     """Centroid, principal-axis lengths, elongation and flatness of a point cloud."""
@@ -54,9 +50,7 @@ def inertia_descriptors(coords: np.ndarray) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
 # Surface
-# ---------------------------------------------------------------------------
 
 # Gaussian pre-smoothing (voxels) before marching cubes.
 SURFACE_SMOOTH_SIGMA = 1.0
@@ -114,9 +108,7 @@ def write_stl(path, verts: np.ndarray, faces: np.ndarray) -> str:
     return str(path)
 
 
-# ---------------------------------------------------------------------------
 # Profiles and roughness
-# ---------------------------------------------------------------------------
 
 def polynomial_residual_rms(x: np.ndarray, y: np.ndarray, degree: int = 4) -> float:
     """RMS of y after removing a smooth degree-``degree`` trend."""
@@ -169,9 +161,7 @@ def curvature_1d(s_mm: np.ndarray, z_mm: np.ndarray, smooth_sigma: float = 2.0,
     return kappa, float(np.mean(interior)), float(np.max(interior)), length
 
 
-# ---------------------------------------------------------------------------
 # Height maps (superior surfaces)
-# ---------------------------------------------------------------------------
 
 def superior_height_map(mask: np.ndarray, lr_axis: int, si_axis: int, ap_axis: int,
                         zooms) -> np.ndarray:
@@ -236,9 +226,7 @@ def rugosity(grid: np.ndarray, row_spacing_mm: float, col_spacing_mm: float) -> 
     return float(np.mean(local[good])) if good.any() else float("nan")
 
 
-# ---------------------------------------------------------------------------
 # Midline
-# ---------------------------------------------------------------------------
 
 def midline_plane(labels: np.ndarray, affine: np.ndarray, midline_label: int,
                   mode: str = "centroid") -> tuple[np.ndarray, np.ndarray]:

@@ -49,9 +49,7 @@ def _run(cmd, runtime, label):
     return proc
 
 
-# ---------------------------------------------------------------------------
 # prep-crop: register each session to the template and crop
-# ---------------------------------------------------------------------------
 
 def _prep_crop_one(
     image, timepoint_idx, runtime, container, pipeline, modality, assets,
@@ -138,9 +136,7 @@ def build_prep_crop(config: LatsConfig) -> pe.MapNode:
     return node
 
 
-# ---------------------------------------------------------------------------
 # segment-cropped: predict on the already-cropped SST
-# ---------------------------------------------------------------------------
 
 def _segment_cropped(
     template, runtime, container, pipeline, modality, assets, container_args,

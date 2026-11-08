@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# ---- top-level files ------------------------------------------------------
+# top-level files
 
 def manifest_path(output_prefix: Path) -> Path:
     return output_prefix / "lats_run.json"
@@ -13,7 +13,7 @@ def labels_path(output_prefix: Path) -> Path:
     return output_prefix / "labels.txt"
 
 
-# ---- user-facing output subdirs -------------------------------------------
+# user-facing output subdirs
 
 def sst_dir(output_prefix: Path) -> Path:
     return output_prefix / "sst"
@@ -51,7 +51,7 @@ def lateral_labels_dir(output_prefix: Path) -> Path:
     return output_prefix / "labels_lateral"
 
 
-# ---- intermediate / working dirs ------------------------------------------
+# intermediate / working dirs
 
 def intermediate_dir(output_prefix: Path) -> Path:
     return output_prefix / "intermediate"
@@ -65,7 +65,7 @@ def reg_dir(output_prefix: Path) -> Path:
     return intermediate_dir(output_prefix) / "reg"
 
 
-# ---- nipype cache (sibling of output_prefix) ------------------------------
+# nipype cache (sibling of output_prefix)
 
 def nipype_base_dir(output_prefix: Path) -> Path:
     return output_prefix.parent / f"{output_prefix.name}_nipype"

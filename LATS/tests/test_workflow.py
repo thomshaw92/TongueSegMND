@@ -1,4 +1,4 @@
-"""Structural tests — no ANTs, no container, no data."""
+"""Structural tests: no ANTs, no container, no data."""
 from __future__ import annotations
 
 import dataclasses

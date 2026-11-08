@@ -65,7 +65,7 @@ def _qc_for_timepoint(
     _overlay(axes[2], vol[:, :, cz], lab[:, :, cz], "axial")
     n_vox = int((lab > 0).sum())
     fig.suptitle(
-        f"tp{timepoint_idx:02d}  —  {_P(image).name}  —  {n_vox} labelled voxels",
+        f"tp{timepoint_idx:02d}  |  {_P(image).name}  |  {n_vox} labelled voxels",
         fontsize=10,
     )
     fig.tight_layout()

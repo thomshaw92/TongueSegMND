@@ -11,9 +11,7 @@ from tongue_qc.discovery import Scan, find_scans, parse_ids, read_metrics, read_
 
 from .conftest import build_scan_dir
 
-# --------------------------------------------------------------------------- #
 # parse_ids
-# --------------------------------------------------------------------------- #
 
 PARSE_ID_CASES: list[tuple[str, tuple[str, str]]] = [
     # Rule 2: numeric suffix.
@@ -54,9 +52,7 @@ def test_parse_ids_never_returns_empty_sub() -> None:
         assert ses.startswith("ses-")
 
 
-# --------------------------------------------------------------------------- #
 # find_scans: layouts
-# --------------------------------------------------------------------------- #
 
 
 def test_find_scans_flat_layout(flat_root: Path) -> None:
@@ -137,9 +133,7 @@ def test_find_scans_empty_root_returns_empty(empty_root: Path) -> None:
     assert skipped == []
 
 
-# --------------------------------------------------------------------------- #
 # find_scans: per-scan record
-# --------------------------------------------------------------------------- #
 
 
 def test_find_scans_populates_every_field(single_scan_root: Path) -> None:
@@ -173,9 +167,7 @@ def test_scan_is_frozen(single_scan_root: Path) -> None:
         scan.scan_id = "mutated"  # type: ignore[misc]
 
 
-# --------------------------------------------------------------------------- #
 # find_scans: source-image disambiguation
-# --------------------------------------------------------------------------- #
 
 
 def test_source_image_excludes_pipeline_outputs(scan_dir_factory: Callable[..., Path]) -> None:
@@ -213,9 +205,7 @@ def test_a_bad_scan_does_not_hide_the_good_ones(tmp_path: Path) -> None:
     assert [name for name, _ in skipped] == ["BAD001_1"]
 
 
-# --------------------------------------------------------------------------- #
 # find_scans: space selection
-# --------------------------------------------------------------------------- #
 
 
 def test_space_auto_prefers_native(single_scan_root: Path) -> None:
@@ -236,9 +226,7 @@ def test_space_can_be_forced(single_scan_root: Path) -> None:
     assert scan.space == "template"
 
 
-# --------------------------------------------------------------------------- #
 # select
-# --------------------------------------------------------------------------- #
 
 
 def test_select_default_is_sorted_and_complete(fake_scans: Callable[..., list[Scan]]) -> None:
@@ -349,9 +337,7 @@ def test_select_returns_a_list(fake_scans: Callable[..., list[Scan]]) -> None:
     assert isinstance(out, list)
 
 
-# --------------------------------------------------------------------------- #
 # read_metrics / read_postprocess: must never raise
-# --------------------------------------------------------------------------- #
 
 
 def test_read_metrics_returns_the_first_data_row(single_scan_root: Path) -> None:

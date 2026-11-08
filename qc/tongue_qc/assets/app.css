@@ -67,7 +67,7 @@ kbd {
   color: #dbe4ee;
 }
 
-/* ---------------------------------------------------------------- layout */
+/* layout */
 
 #app {
   display: grid;
@@ -85,7 +85,7 @@ kbd {
   padding: 0 14px 6px;
 }
 
-/* ------------------------------------------------- density (v) fallbacks */
+/* density (v) fallbacks */
 
 body[data-density="both"]    { --rowh: calc((100vh - var(--viewer-chrome)) / 6); }
 body[data-density="overlay"] { --rowh: calc((100vh - 150px) / 3); }
@@ -114,7 +114,7 @@ body[data-density="focus"] #planes .plane.focused { display: block; max-width: 1
   border-left: 1px solid var(--line);
 }
 
-/* ------------------------------------------------------- focus indicator */
+/* focus indicator */
 
 #focusbar {
   position: sticky;
@@ -204,7 +204,7 @@ body[data-density="focus"] #planes .plane.focused { display: block; max-width: 1
 
 #vchip:hover, #ckchip:hover { border-color: var(--fg-dim); }
 
-/* ------------------------------------------------------------- the planes */
+/* the planes */
 
 .plane {
   margin: 0 auto 6px;
@@ -347,7 +347,7 @@ body.ovhidden .strip.ov { opacity: 0 !important; }
   color: var(--fg-dim);
 }
 
-/* ----------------------------------------------------------- side panels */
+/* side panels */
 
 .card {
   padding: 10px;
@@ -557,7 +557,7 @@ input:focus, textarea:focus {
 .rate.active .rbtn { border-color: #3a4551; }
 .rate.active .rbtn.sel { border-color: var(--acc); }
 
-/* ------------------------------------------------------- tooth artefact */
+/* tooth artefact */
 
 #toothrow {
   display: flex;
@@ -869,7 +869,7 @@ details > summary {
   white-space: pre;
 }
 
-/* ------------------------------------------------------ rating anchors (`s`) */
+/* rating anchors (`s`) */
 
 /* #scalebody is filled from TONGUE_QC_SCALE.md at build time. */
 
@@ -1055,7 +1055,7 @@ details > summary {
 
 /* Plain styling: keep last so it overrides the rules above. */
 
-/* --- no glow, no gradients, no wide tracking ---------------------------- */
+/* no glow, no gradients, no wide tracking */
 #focusbar,
 #toothask,
 #barfill            { background: var(--panel-2) !important; }
@@ -1073,7 +1073,7 @@ details > summary {
 /* neutral key caps */
 kbd                 { background: #2c2f33; border-color: var(--line); color: var(--fg); }
 
-/* --- calmer chrome ------------------------------------------------------ */
+/* calmer chrome */
 .card               { background: var(--panel-2); border: 1px solid var(--line); }
 .card h2            { color: var(--fg-dim); font-weight: 600; text-transform: none; }
 .rate.active        { border-color: var(--fg) !important; }

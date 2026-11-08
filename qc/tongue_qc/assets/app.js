@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  /* ------------------------------------------------------------ constants */
+  /* constants */
 
   var ADVANCE_MS = 180;
   var CK_DEBOUNCE_MS = 400;
@@ -70,14 +70,14 @@
   var INDEX_BY_ID = new Map();
   SCANS.forEach(function (s, i) { INDEX_BY_ID.set(s.scan_id, i); });
 
-  /* ---------------------------------------------------------------- state */
+  /* state */
 
   /* scan_id -> {mri, seg, notes, tooth, toothVol, toothShape, rated_at} */
   var records = new Map();
   var counts = { rated: 0, partial: 0 };
   var idx = 0;
   var focus = 'mri';                // which scale the next digit fills
-  var toothStep = null;             // null | 'vol' | 'shape' — live follow-up
+  var toothStep = null;             // null | 'vol' | 'shape': live follow-up
   var advanceTimer = null;
   var notesTimer = null;
   var notesScanId = null;
@@ -119,7 +119,7 @@
   var loadToken = 0;
   var pendingLoads = 0;
 
-  /* -------------------------------------------------------------- helpers */
+  /* helpers */
 
   function $(id) { return document.getElementById(id); }
 
@@ -168,7 +168,7 @@
     return n;
   }
 
-  /* ------------------------------------------------------------- settings */
+  /* settings */
 
   function loadSettings() {
     try {
@@ -187,7 +187,7 @@
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { lsOK = false; }
   }
 
-  /* -------------------------------------------------------------- records */
+  /* records */
 
   function blankRec() {
     return { mri: null, seg: null, notes: '', tooth: false, toothVol: null, toothShape: null, rated_at: '' };
@@ -289,7 +289,7 @@
       if (isBlank(rec)) localStorage.removeItem(LS_PREFIX + id);
       else localStorage.setItem(LS_PREFIX + id, JSON.stringify(rec));
     } catch (e) {
-      if (lsOK) { lsOK = false; setStatus('err', 'localStorage write failed \u2014 export manually before closing.'); }
+      if (lsOK) { lsOK = false; setStatus('err', 'localStorage write failed; export manually before closing.'); }
     }
 
     ckDirty = true;
@@ -327,7 +327,7 @@
     counts.partial = partial;
   }
 
-  /* ------------------------------------------------------------ asset URLs */
+  /* asset URLs */
 
   function fileFor(scan, plane, kind) {
     var f = scan.files;
@@ -359,7 +359,7 @@
 
   function cur() { return SCANS.length ? SCANS[idx] : null; }
 
-  /* ----------------------------------------------------------- plane build */
+  /* plane build */
 
   var planeUI = {};
 
@@ -419,7 +419,7 @@
       saveSettings();
       syncOverlayButton();
       renderScan();
-      setStatus('warn', 'No contour strips in this build \u2014 showing filled overlay.');
+      setStatus('warn', 'No contour strips in this build; showing filled overlay.');
     }
   }
 
@@ -446,7 +446,7 @@
     container.appendChild(el('span', 'orient b', o.b));
   }
 
-  /* -------------------------------------------------------------- rendering */
+  /* rendering */
 
   function imagesPending() { return pendingLoads > 0; }
 
@@ -518,7 +518,7 @@
       }
 
       u.dim.textContent = n + ' frames \u00b7 ' + fw + '\u00d7' + fh + ' px' +
-        (slices.length ? ' \u00b7 slices ' + slices[0] + '\u2013' + slices[slices.length - 1] : '');
+        (slices.length ? ' \u00b7 slices ' + slices[0] + '-' + slices[slices.length - 1] : '');
 
       buildMarks(u.marksTop, p, n, fw, W, slices, true);
       buildMarks(u.marksBot, p, n, fw, W, slices, false);
@@ -581,17 +581,17 @@
 
     var t = $('metricstable');
     clear(t);
-    addMetricRow(t, 'tongue volume (mm\u00b3)', m.tongue_volume_mm3 !== undefined ? m.tongue_volume_mm3 : '\u2014');
-    addMetricRow(t, 'vertical frac', m.vertical_fraction !== undefined ? m.vertical_fraction : '\u2014');
-    addMetricRow(t, 'sup. long. frac', m.superior_longitudinal_fraction !== undefined ? m.superior_longitudinal_fraction : '\u2014');
-    addMetricRow(t, 'inf. long. frac', m.inferior_longitudinal_fraction !== undefined ? m.inferior_longitudinal_fraction : '\u2014');
-    addMetricRow(t, 'genioglossus frac', m.genioglossus_fraction !== undefined ? m.genioglossus_fraction : '\u2014');
-    addMetricRow(t, 'dorsum mean \u03ba (1/mm)', m.dorsum_mean_curvature_1pmm !== undefined ? m.dorsum_mean_curvature_1pmm : '\u2014');
-    addMetricRow(t, 'dorsum max \u03ba (1/mm)', m.dorsum_max_curvature_1pmm !== undefined ? m.dorsum_max_curvature_1pmm : '\u2014');
-    addMetricRow(t, 'dorsum length (mm)', m.dorsum_length_mm !== undefined ? m.dorsum_length_mm : '\u2014');
-    addMetricRow(t, 'cc removed voxels', cc.removed_voxels !== undefined ? cc.removed_voxels : '\u2014');
-    addMetricRow(t, 'cc n components', cc.n_components !== undefined ? cc.n_components : '\u2014');
-    addMetricRow(t, 'SL trim removed', sl.removed_voxels !== undefined ? sl.removed_voxels : '\u2014');
+    addMetricRow(t, 'tongue volume (mm\u00b3)', m.tongue_volume_mm3 !== undefined ? m.tongue_volume_mm3 : '-');
+    addMetricRow(t, 'vertical frac', m.vertical_fraction !== undefined ? m.vertical_fraction : '-');
+    addMetricRow(t, 'sup. long. frac', m.superior_longitudinal_fraction !== undefined ? m.superior_longitudinal_fraction : '-');
+    addMetricRow(t, 'inf. long. frac', m.inferior_longitudinal_fraction !== undefined ? m.inferior_longitudinal_fraction : '-');
+    addMetricRow(t, 'genioglossus frac', m.genioglossus_fraction !== undefined ? m.genioglossus_fraction : '-');
+    addMetricRow(t, 'dorsum mean \u03ba (1/mm)', m.dorsum_mean_curvature_1pmm !== undefined ? m.dorsum_mean_curvature_1pmm : '-');
+    addMetricRow(t, 'dorsum max \u03ba (1/mm)', m.dorsum_max_curvature_1pmm !== undefined ? m.dorsum_max_curvature_1pmm : '-');
+    addMetricRow(t, 'dorsum length (mm)', m.dorsum_length_mm !== undefined ? m.dorsum_length_mm : '-');
+    addMetricRow(t, 'cc removed voxels', cc.removed_voxels !== undefined ? cc.removed_voxels : '-');
+    addMetricRow(t, 'cc n components', cc.n_components !== undefined ? cc.n_components : '-');
+    addMetricRow(t, 'SL trim removed', sl.removed_voxels !== undefined ? sl.removed_voxels : '-');
 
     var all = $('metricsall');
     clear(all);
@@ -605,7 +605,7 @@
     ['mri', 'seg'].forEach(function (scale) {
       var v = r[scale];
       var out = $('val-' + scale);
-      out.textContent = v === null ? '\u2013' : String(v);
+      out.textContent = v === null ? '-' : String(v);
       out.classList.toggle('empty', v === null);
       var btns = $('btns-' + scale).children;
       for (var i = 0; i < btns.length; i++) {
@@ -633,14 +633,14 @@
     renderTooth(r);
   }
 
-  /* ------------------------------------------------------ tooth artefact */
+  /* tooth artefact */
 
   var TOOTH_Q = {
     vol: 'Is the tooth artefact impacting the VOLUME of the segmentation?',
     shape: 'Is the tooth artefact impacting the SHAPE of the tongue?'
   };
 
-  function ynLabel(v) { return v === 'y' ? 'Y' : v === 'n' ? 'N' : '–'; }
+  function ynLabel(v) { return v === 'y' ? 'Y' : v === 'n' ? 'N' : '-'; }
 
   function toothOpen() { return toothStep !== null; }
 
@@ -693,7 +693,7 @@
     if (toothOpen()) {
       toothStep = null;
       renderTooth();
-      setStatus('warn', 'Tooth follow-ups dismissed — flag kept, answers left empty.');
+      setStatus('warn', 'Tooth follow-ups dismissed; flag kept, answers left empty.');
       return;
     }
     cancelAdvance();
@@ -768,11 +768,11 @@
     $('fb-text').textContent = 'next digit \u2192 ' + label;
     $('fb-sub').textContent = which === 'mri'
       ? 'grade the raw image'
-      : 'grade the segmentation' + (settings.autoAdvance ? ' \u2014 auto-advance on' : '');
+      : 'grade the segmentation' + (settings.autoAdvance ? ', auto-advance on' : '');
     renderRatings();
   }
 
-  /* ------------------------------------------------------------ navigation */
+  /* navigation */
 
   function cancelAdvance() {
     if (advanceTimer !== null) { clearTimeout(advanceTimer); advanceTimer = null; }
@@ -818,7 +818,7 @@
     while (preloadRing.length > 36) preloadRing.shift();
   }
 
-  /* ---------------------------------------------------------- rating input */
+  /* rating input */
 
   function applyDigit(v) {
     var s = cur();
@@ -853,7 +853,7 @@
     f.classList.add('needed');
     f.style.outline = '2px solid var(--err, #e2564a)';
     f.style.outlineOffset = '1px';
-    setStatus('err', 'Enter your name in the rater field — the CSV needs it to merge.');
+    setStatus('err', 'Enter your name in the rater field; the CSV needs it to merge.');
   }
 
   /* Backspace clears the current scan only; on an empty scan it just steps back. */
@@ -901,7 +901,7 @@
     renderProgress();
   }
 
-  /* ---------------------------------------------------------------- notes */
+  /* notes */
 
   function flushNotes() {
     if (notesTimer !== null) { clearTimeout(notesTimer); notesTimer = null; }
@@ -915,7 +915,7 @@
     renderProgress();
   }
 
-  /* ------------------------------------------------------------- display */
+  /* display */
 
   function applyDisplay() {
     document.documentElement.style.setProperty('--ov-op', String(settings.opacity / 100));
@@ -980,7 +980,7 @@
     $('lbimg').removeAttribute('src');
   }
 
-  /* ------------------------------------------------------------------ CSV */
+  /* CSV */
 
   function q(v) {
     return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
@@ -1055,7 +1055,7 @@
     var col = {};
     CSV_HEADER.forEach(function (name) { col[name] = head.indexOf(name); });
     if (col.scan_id < 0) {
-      setStatus('err', 'CSV has no scan_id column \u2014 nothing imported.');
+      setStatus('err', 'CSV has no scan_id column; nothing imported.');
       return { applied: 0, unknown: 0, skipped: 0, conflicts: 0 };
     }
 
@@ -1119,7 +1119,7 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
   }
 
-  /* -------------------------------------------------------- checkpointing */
+  /* checkpointing */
 
   function setStatus(kind, msg) {
     var box = $('ckstatus');
@@ -1150,7 +1150,7 @@
       fsHandle = null;
     }
     setTierLabel();
-    setStatus('err', why + ' \u2014 dropped to ' + (tier === 'fs' ? 'file handle' : 'download fallback') + '.');
+    setStatus('err', why + '; dropped to ' + (tier === 'fs' ? 'file handle' : 'download fallback') + '.');
   }
 
   function scheduleCheckpoint() {
@@ -1246,7 +1246,7 @@
 
   function connectCSV() {
     if (!window.showSaveFilePicker) {
-      setStatus('warn', 'This browser has no File System Access API \u2014 use Export CSV instead.');
+      setStatus('warn', 'This browser has no File System Access API; use Export CSV instead.');
       return;
     }
     window.showSaveFilePicker({
@@ -1296,7 +1296,7 @@
     renderProgress();
   }
 
-  /* ------------------------------------------------------------- keyboard */
+  /* keyboard */
 
   /* Only text-entry fields may swallow the rating keys. */
   var TEXTLIKE_INPUT = {
@@ -1326,7 +1326,7 @@
         e.preventDefault();
         toothStep = null;
         renderTooth();
-        setStatus('warn', 'Tooth follow-ups dismissed — flag kept, answers left empty.');
+        setStatus('warn', 'Tooth follow-ups dismissed; flag kept, answers left empty.');
         return;
       }
       if (isTyping(e)) { e.target.blur(); e.preventDefault(); }
@@ -1349,7 +1349,7 @@
       e.preventDefault();
       /* Digits are blocked while a tooth question is open. */
       if (toothOpen()) {
-        setStatus('warn', 'Answer the tooth question first — y / n, or Esc to dismiss.');
+        setStatus('warn', 'Answer the tooth question first: y / n, or Esc to dismiss.');
         return;
       }
       if (imagesPending()) { setStatus('warn', 'loading… ignoring that digit until the strips are on screen.'); return; }
@@ -1387,7 +1387,7 @@
     if (e.code === 'KeyH') document.body.classList.remove('ovhidden');
   }
 
-  /* -------------------------------------------------- build-scoped storage */
+  /* build-scoped storage */
 
   function seedWasApplied() {
     try { return localStorage.getItem(SEED_KEY) === '1'; } catch (e) { return false; }
@@ -1457,7 +1457,7 @@
     setStatus('warn', 'Cleared ' + n + ' rating(s) for this build.');
   }
 
-  /* ------------------------------------------------------------ extra UI */
+  /* extra UI */
 
   /* Creates the loading tag, the clear-ratings row and the completion card. */
   function buildExtraUI() {
@@ -1531,7 +1531,7 @@
     bar.style.border = '1px solid #9a7a22';
     bar.appendChild(el('div', null,
       list.length + ' rating(s) from a previous build of these scans are in this browser. ' +
-      'They were NOT applied — the segmentations may have changed.'));
+      'They were NOT applied; the segmentations may have changed.'));
     var row = el('div', 'btnrow');
     row.style.marginTop = '6px';
     var yes = el('button', 'btn', 'Import ' + list.length);
@@ -1555,7 +1555,7 @@
     side.insertBefore(bar, side.firstChild);
   }
 
-  /* ------------------------------------------------------------------ wire */
+  /* wire */
 
   function makeRatingButtons(scale) {
     var host = $('btns-' + scale);
@@ -1690,10 +1690,10 @@
         navigator.clipboard.writeText(box.value).then(function () {
           setStatus('ok', 'CSV copied to the clipboard.');
         }, function () {
-          setStatus('warn', 'Copy blocked \u2014 select the text and copy manually.');
+          setStatus('warn', 'Copy blocked; select the text and copy manually.');
         });
       } else {
-        setStatus(ok ? 'ok' : 'warn', ok ? 'CSV copied to the clipboard.' : 'Copy blocked \u2014 select and copy manually.');
+        setStatus(ok ? 'ok' : 'warn', ok ? 'CSV copied to the clipboard.' : 'Copy blocked; select and copy manually.');
       }
       box.blur();
       ev.currentTarget.blur();
@@ -1711,7 +1711,7 @@
     });
   }
 
-  /* ------------------------------------------------------------------ init */
+  /* init */
 
   function init() {
     loadSettings();
@@ -1765,9 +1765,9 @@
     if (tier === 'server') {
       tryServerLoad();
     } else if (window.showSaveFilePicker) {
-      setStatus('warn', 'no server \u2014 click Connect CSV\u2026 to write straight to a file on disk');
+      setStatus('warn', 'no server: click Connect CSV\u2026 to write straight to a file on disk');
     } else {
-      setStatus('warn', 'no server \u2014 snapshots auto-download every ' + settings.checkpointEvery + ' ratings');
+      setStatus('warn', 'no server: snapshots auto-download every ' + settings.checkpointEvery + ' ratings');
     }
 
     setInterval(renderProgress, 1000);

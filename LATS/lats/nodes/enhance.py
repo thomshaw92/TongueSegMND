@@ -31,9 +31,7 @@ def _resample_iso(inp, out, iso_mm, env, nearest=False):
          "ResampleImage(isotropic)", env)
 
 
-# ---------------------------------------------------------------------------
 # enhance_crop: tongue-local N4 + denoise + isotropic, on the crop
-# ---------------------------------------------------------------------------
 
 def _enhance_crop_one(cropped, timepoint_idx, do_n4, do_denoise, iso_mm,
                       threads, output_dir) -> str:
@@ -86,9 +84,7 @@ def build_enhance_crop(config: LatsConfig) -> pe.MapNode:
     return node
 
 
-# ---------------------------------------------------------------------------
 # native_qc_image: whole native image re-preprocessed for QC
-# ---------------------------------------------------------------------------
 
 def _native_qc_one(image, warped_labels, timepoint_idx, do_n4, do_denoise,
                    iso_mm, threads, output_dir, work_dir) -> tuple[str, str]:

@@ -19,14 +19,14 @@
       <span class="fb-sub" id="fb-sub"></span>
       <span id="fbtools">
         <button type="button" id="vchip" title="viewer density (v)">view: both</button>
-        <button type="button" id="ckchip" class="idle" title="checkpoint status &mdash; click for the full panel"><span id="ckchiptext">starting</span></button>
+        <button type="button" id="ckchip" class="idle" title="checkpoint status: click for the full panel"><span id="ckchiptext">starting</span></button>
       </span>
     </div>
     <!-- Tooth-artefact follow-ups; fixed-position, outside fitViewer()'s layout. -->
     <div id="toothask" hidden role="dialog" aria-live="assertive" aria-label="tooth artefact follow-up">
       <span class="ta-step" id="ta-step">1 / 2</span>
       <div class="ta-main">
-        <div class="ta-lead">tooth artefact &mdash; answer to continue</div>
+        <div class="ta-lead">tooth artefact: answer to continue</div>
         <div class="ta-q" id="ta-q"></div>
         <div class="ta-sub" id="ta-sub"></div>
       </div>
@@ -60,7 +60,7 @@
     </div>
 
     <div class="card">
-      <div id="scanid">&mdash;</div>
+      <div id="scanid">-</div>
       <div id="scanmeta"></div>
       <div id="scanflags"></div>
     </div>
@@ -70,7 +70,7 @@
         <div class="rate-hd">
           <span class="rate-name">MRI quality</span>
           <span class="rate-cue" id="cue-mri"></span>
-          <span class="rate-val empty" id="val-mri">&ndash;</span>
+          <span class="rate-val empty" id="val-mri">-</span>
         </div>
         <div class="btns" id="btns-mri"></div>
       </div>
@@ -78,14 +78,14 @@
         <div class="rate-hd">
           <span class="rate-name">Seg quality</span>
           <span class="rate-cue" id="cue-seg"></span>
-          <span class="rate-val empty" id="val-seg">&ndash;</span>
+          <span class="rate-val empty" id="val-seg">-</span>
         </div>
         <div class="btns" id="btns-seg"></div>
       </div>
       <label class="chk"><input type="checkbox" id="autoadv" checked> auto-advance after both <kbd>a</kbd></label>
       <div id="toothrow">
         <button class="btn" type="button" id="toothbtn" aria-pressed="false"
-                title="dental / metal artefact on this scan (t) — then y/n for volume and shape">tooth artefact <kbd>t</kbd></button>
+                title="dental / metal artefact on this scan (t), then y/n for volume and shape">tooth artefact <kbd>t</kbd></button>
         <span id="toothchip" class="toothchip" hidden></span>
       </div>
     </div>
@@ -122,11 +122,11 @@
     <div class="card" id="scalecard">
       <h2>rating scale <kbd>s</kbd></h2>
       <div class="legend" id="scalelegend">
-        <b>1</b><span>unusable / unacceptable &mdash; fail</span>
-        <b>2</b><span>poor &mdash; fail (MRI: fail or check)</span>
-        <b>3</b><span>moderate &mdash; pass (MRI: pass + check)</span>
-        <b>4</b><span>good &mdash; pass</span>
-        <b>5</b><span>excellent &mdash; pass</span>
+        <b>1</b><span>unusable / unacceptable: fail</span>
+        <b>2</b><span>poor: fail (MRI: fail or check)</span>
+        <b>3</b><span>moderate: pass (MRI: pass + check)</span>
+        <b>4</b><span>good: pass</span>
+        <b>5</b><span>excellent: pass</span>
       </div>
       <button class="btn wide" id="scaleopen" style="margin-top:8px">Open the full anchors <kbd>s</kbd></button>
       <details id="scaledetails" style="margin-top:8px">
@@ -148,7 +148,7 @@
     <div class="card">
       <h2>keys</h2>
       <div class="hints">
-        <span><kbd>1</kbd>&ndash;<kbd>5</kbd></span><span>fill the highlighted scale</span>
+        <span><kbd>1</kbd>-<kbd>5</kbd></span><span>fill the highlighted scale</span>
         <span><kbd>&rarr;</kbd><kbd>&larr;</kbd></span><span>next / previous scan</span>
         <span><kbd>&#9003;</kbd></span><span>undo: tooth &rarr; seg &rarr; mri &rarr; back</span>
         <span><kbd>t</kbd></span><span>tooth artefact on/off (any time)</span>
@@ -161,7 +161,7 @@
         <span><kbd>s</kbd></span><span>rating anchors</span>
         <span><kbd>q</kbd></span><span>pipeline qc.png</span>
         <span><kbd>m</kbd></span><span>metrics panel</span>
-        <span><kbd>n</kbd></span><span>notes (Esc leaves) &mdash; unless a tooth question is open</span>
+        <span><kbd>n</kbd></span><span>notes (Esc leaves), unless a tooth question is open</span>
         <span><kbd>f</kbd></span><span>next unrated</span>
         <span><kbd>Esc</kbd></span><span>close / blur</span>
       </div>
@@ -260,7 +260,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   }
 
-  /* ---------------------------------------------------- fit the viewer */
+  /* fit the viewer */
 
   var pending = false;
   var mo = null;
@@ -368,7 +368,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
     if (!window.ResizeObserver) setInterval(schedule, 700);
   }
 
-  /* ------------------------------------------------------ density modes */
+  /* density modes */
 
   function syncDensity() {
     document.body.setAttribute('data-density', state.density);
@@ -389,7 +389,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
     setDensity(DENSITIES[(DENSITIES.indexOf(state.density) + 1) % DENSITIES.length]);
   }
 
-  /* ------------------------------------------ per-mode overlay opacity */
+  /* per-mode overlay opacity */
 
   function curMode() {
     var b = $('ovmode');
@@ -433,7 +433,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
     });
   }
 
-  /* ------------------------------------- checkpoint chip in the focus bar */
+  /* checkpoint chip in the focus bar */
 
   function mirrorStatus() {
     var box = $('ckstatus'), chip = $('ckchip'), txt = $('ckchiptext');
@@ -445,7 +445,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
     var short = kind === 'ok' ? 'saved' : kind === 'err' ? 'NOT SAVED' :
                 kind === 'warn' ? 'browser only' : 'starting';
     txt.textContent = short;
-    chip.title = (tier ? tier + ' — ' : '') + msg;
+    chip.title = (tier ? tier + ': ' : '') + msg;
   }
 
   function watchStatus() {
@@ -468,7 +468,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
     }
   }
 
-  /* ------------------------------------------- the rating anchors panel */
+  /* the rating anchors panel */
 
   function scaleFilled() {
     var body = $('scalebody');
@@ -486,7 +486,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
       /* no anchors embedded: keep the card's short legend and point at the .md */
       while (body.firstChild) body.removeChild(body.firstChild);
       var p = document.createElement('p');
-      p.textContent = 'The full anchors were not embedded in this build — see ' +
+      p.textContent = 'The full anchors were not embedded in this build; see ' +
         'TONGUE_QC_SCALE.md next to this file. Score the WORST defect you can see, ' +
         'not the average; if you cannot choose in three seconds take the lower score ' +
         'and leave a note.';
@@ -513,7 +513,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
   function openScale() { var o = $('scaleover'); if (o && scaleFilled()) o.hidden = false; }
   function closeScale() { var o = $('scaleover'); if (o) o.hidden = true; }
 
-  /* ------------------------------------------------------------- keys */
+  /* keys */
 
   function isTyping(e) {
     var t = e.target;
@@ -546,7 +546,7 @@ const SEED_RATINGS = {{SEED_RATINGS}};
     }
   }
 
-  /* ------------------------------------------------------------- init */
+  /* init */
 
   function init() {
     loadState();

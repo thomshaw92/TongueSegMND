@@ -31,9 +31,7 @@ from .conftest import (
 GUTTER_PX = 2
 
 
-# --------------------------------------------------------------------------- #
 # Helpers
-# --------------------------------------------------------------------------- #
 
 
 def _seg_path(scan: Scan) -> Path:
@@ -109,9 +107,7 @@ def _matches_a_label(rgb: Sequence[int], labels: Sequence[int]) -> bool:
     )
 
 
-# --------------------------------------------------------------------------- #
 # Module-level constants
-# --------------------------------------------------------------------------- #
 
 
 def test_plane_axes_and_label_colours_are_fixed() -> None:
@@ -148,9 +144,7 @@ def test_montage_result_fields(normal_scan: Scan, out_dir: Path) -> None:
         assert w > 0 and h > 0
 
 
-# --------------------------------------------------------------------------- #
 # Strip layout
-# --------------------------------------------------------------------------- #
 
 
 @pytest.mark.parametrize("n_frames", [3, 6, 8])
@@ -225,9 +219,7 @@ def test_no_contour_file_when_contour_is_false(normal_scan: Scan, out_dir: Path)
     assert not list(out_dir.glob("*_ct.png"))
 
 
-# --------------------------------------------------------------------------- #
 # Slice selection
-# --------------------------------------------------------------------------- #
 
 
 def test_slice_indices_are_evenly_spaced_over_the_padded_bbox(
@@ -295,9 +287,7 @@ def test_edge_scan_strips_are_still_well_formed(edge_seg_scan: Scan, out_dir: Pa
             assert bg.size == (res.n_frames * fw + (res.n_frames - 1) * GUTTER_PX, fh)
 
 
-# --------------------------------------------------------------------------- #
 # Empty segmentation
-# --------------------------------------------------------------------------- #
 
 
 def test_empty_seg_falls_back_to_centre_and_still_renders(
@@ -336,9 +326,7 @@ def test_empty_seg_overlay_is_fully_transparent(empty_seg_scan: Scan, out_dir: P
         assert int(_rgba(out_dir, res, f"{plane}_ov")[..., 3].max()) == 0
 
 
-# --------------------------------------------------------------------------- #
 # Overlay pixels
-# --------------------------------------------------------------------------- #
 
 
 def test_overlay_alpha_is_binary_and_colours_are_label_colours(
@@ -428,9 +416,7 @@ def test_float32_label_map_is_rounded_not_truncated(
     assert len(seen) == 4
 
 
-# --------------------------------------------------------------------------- #
 # Geometry: anisotropy correction
-# --------------------------------------------------------------------------- #
 
 
 def test_aspect_correction_makes_the_on_screen_pixel_isotropic(
@@ -470,9 +456,7 @@ def test_long_edge_is_capped(normal_scan: Scan, out_dir: Path) -> None:
         assert max(w, h) <= 32, f"{plane} frame {w}x{h} exceeds max_frame_px"
 
 
-# --------------------------------------------------------------------------- #
 # Windowing
-# --------------------------------------------------------------------------- #
 
 
 def test_windowing_uses_nonzero_voxels_only(narrow_band_scan: Scan, out_dir: Path) -> None:
@@ -483,7 +467,7 @@ def test_windowing_uses_nonzero_voxels_only(narrow_band_scan: Scan, out_dir: Pat
         arr = _grey(out_dir, res, f"{plane}_bg").astype(np.int16)
         mid = float(((arr >= 60) & (arr <= 190)).mean())
         assert mid > 0.05, (
-            f"{plane}: only {mid:.3%} of pixels are mid-grey — the window looks like it "
+            f"{plane}: only {mid:.3%} of pixels are mid-grey; the window looks like it "
             "included the zero background"
         )
         assert int(arr.max()) > 200, f"{plane}: strip never reaches the bright end"
@@ -511,9 +495,7 @@ def test_render_does_not_crash_on_a_nearly_blank_image(
             assert bg.size[0] > 0 and bg.size[1] > 0
 
 
-# --------------------------------------------------------------------------- #
 # Template space and determinism
-# --------------------------------------------------------------------------- #
 
 
 def test_template_space_renders_from_the_warped_pair(

@@ -65,9 +65,7 @@ class MontageResult:
     warnings: list[str] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
 # NIfTI access: RAS-canonical, zero-copy where possible
-# ---------------------------------------------------------------------------
 def _ras_geom(img: nib.Nifti1Image) -> tuple[tuple[int, int, int], tuple[float, float, float]]:
     """RAS-canonical shape and zooms, read from the header alone (no data I/O)."""
     ornt = nib.orientations.io_orientation(img.affine)
@@ -148,9 +146,7 @@ def _bbox(mask: np.ndarray) -> list[tuple[int, int]] | None:
     return out
 
 
-# ---------------------------------------------------------------------------
 # Slice / crop planning
-# ---------------------------------------------------------------------------
 def _slice_indices(lo: int, hi: int, dim: int, n_frames: int, pad_frac: float) -> list[int]:
     """Evenly spaced slice indices spanning a padded bbox range, endpoints included."""
     span = hi - lo
@@ -194,9 +190,7 @@ def _frames(
     return out
 
 
-# ---------------------------------------------------------------------------
 # Intensity windowing
-# ---------------------------------------------------------------------------
 def _window(frames: Sequence[np.ndarray]) -> tuple[float, float, int]:
     """Return ``(lo, hi, n_nonfinite)``: a percentile window over nonzero, finite voxels."""
     stack = np.concatenate([f.ravel() for f in frames]).astype(np.float64, copy=False)
@@ -221,9 +215,7 @@ def _window(frames: Sequence[np.ndarray]) -> tuple[float, float, int]:
     return lo, hi, n_nonfinite
 
 
-# ---------------------------------------------------------------------------
 # Frame sizing (anisotropy correction) and strip assembly
-# ---------------------------------------------------------------------------
 def _frame_size(
     n_rows: int, n_cols: int, z_row: float, z_col: float, max_frame_px: int
 ) -> tuple[int, int]:
@@ -303,9 +295,7 @@ def _rgba_from_masks(
     return Image.fromarray(rgba)
 
 
-# ---------------------------------------------------------------------------
 # Input resolution
-# ---------------------------------------------------------------------------
 def _resolve_pair(scan: Scan, warnings: list[str]) -> tuple[Path, Path, str]:
     """Pick the (image, seg) pair for ``scan.space``, degrading if it is absent."""
     pairs: dict[str, tuple[Path | None, Path | None]] = {
@@ -341,9 +331,7 @@ def _centre_bbox(shape: tuple[int, int, int]) -> list[tuple[int, int]]:
     return [(int(0.25 * n), max(int(0.25 * n), int(0.75 * n) - 1)) for n in shape]
 
 
-# ---------------------------------------------------------------------------
 # Public entry point
-# ---------------------------------------------------------------------------
 def render_scan(
     scan: Scan,
     out_dir: Path,
@@ -375,7 +363,7 @@ def render_scan(
     seg_shape, seg_zooms = _ras_geom(seg_nii)
     if img_shape != seg_shape:
         raise ValueError(
-            f"{getattr(scan, 'scan_id', '?')}: image/segmentation grid mismatch — "
+            f"{getattr(scan, 'scan_id', '?')}: image/segmentation grid mismatch: "
             f"{image_path.name} is {img_shape} in RAS, {seg_path.name} is {seg_shape}; "
             f"resampling is out of scope"
         )
@@ -383,7 +371,7 @@ def render_scan(
         warnings.append(f"zoom mismatch: image {img_zooms} vs seg {seg_zooms}")
     shape, zooms = seg_shape, seg_zooms
 
-    # --- segmentation: bbox, then the frames that will actually be drawn -----
+    # segmentation: bbox, then the frames that will actually be drawn
     seg_vol = _ras_view(seg_nii)
     seg_mask = _rounded_mask(seg_vol)
     bbox = _bbox(seg_mask)
@@ -430,7 +418,7 @@ def render_scan(
     }
     del seg_vol, seg_nii
 
-    # --- image: same planning, then release the volume before drawing --------
+    # image: same planning, then release the volume before drawing
     image_vol = _ras_view(image_nii)
     img_frames: dict[str, list[np.ndarray]] = {
         plane: _frames(image_vol, PLANE_AXIS[plane], plans[plane][0], plans[plane][1])

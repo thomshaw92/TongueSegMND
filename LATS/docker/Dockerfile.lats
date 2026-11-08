@@ -12,10 +12,10 @@
 #       --n4 --denoise --prior-refine \
 #       sub-01_ses-01_T1w.nii.gz sub-01_ses-02_T1w.nii.gz
 
-# --- ANTs CLI (prebuilt) ---------------------------------------------------
+# ANTs CLI (prebuilt)
 FROM antsx/ants:v2.5.4 AS ants
 
-# --- combined image --------------------------------------------------------
+# combined image
 FROM python:3.10-slim
 
 # ANTs binaries + its runtime libs.

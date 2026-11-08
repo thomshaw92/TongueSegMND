@@ -24,7 +24,7 @@ def _affine(spacing=(1.0, 1.0, 1.0)):
     return aff
 
 
-# --- surface area & sphericity ---------------------------------------------
+# surface area & sphericity
 
 def test_sphere_surface_area_matches_analytic():
     r = 20.0
@@ -50,7 +50,7 @@ def test_sphericity_of_cube_is_known():
     assert abs(g.sphericity(vol, area) - 0.80599) < 1e-4
 
 
-# --- inertia ----------------------------------------------------------------
+# inertia
 
 def test_sphere_is_isotropic():
     mask = _ellipsoid((48, 48, 48), (18.0, 18.0, 18.0))
@@ -83,7 +83,7 @@ def test_centroid_is_recovered():
     assert abs(d["centroid_z_mm"] - 7.0) < 1e-6
 
 
-# --- roughness / profiles ---------------------------------------------------
+# roughness / profiles
 
 def test_polynomial_is_perfectly_detrended():
     x = np.linspace(0, 10, 60)
@@ -137,7 +137,7 @@ def test_arc_length_of_a_circle_segment():
     assert abs(length - expected) / expected < 0.01, (length, expected)
 
 
-# --- height maps ------------------------------------------------------------
+# height maps
 
 def test_rugosity_of_flat_surface_is_one():
     grid = np.full((20, 20), 5.0)
@@ -165,7 +165,7 @@ def test_superior_height_map_finds_the_top():
     assert np.isnan(heights[0, 0])
 
 
-# --- midline / lateralisation ----------------------------------------------
+# midline / lateralisation
 
 def test_lateralise_splits_a_symmetric_object_evenly():
     labels = np.zeros((40, 20, 20), dtype=int)
