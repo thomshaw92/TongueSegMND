@@ -193,7 +193,9 @@ def _segment_cropped(
     # 4D softmax: Linear (never GenericLabel), -e 3 resamples all channels together.
     probs_out = ""
     seg_probs = out_dir / "seg_template_probs.nii.gz"
-    if save_probs and seg_probs.is_file():
+    if save_probs:
+        if not seg_probs.is_file():
+            raise RuntimeError(f"--prior-probs: the segmenter wrote no {seg_probs.name} in {out_dir}")
         probs_dest = sd / "sst_seg_probs.nii.gz"
         _run(["antsApplyTransforms", "-d", "3", "-e", "3", "-i", str(seg_probs),
               "-r", str(template), "-o", str(probs_dest), "-n", "Linear"],

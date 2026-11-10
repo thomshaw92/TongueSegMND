@@ -176,3 +176,21 @@ def test_probs_exact_zeros_do_not_nan():
     refined, info = refine_with_prior(dl, priors, (1, 1, 1), fg_ids=(1, 2), dl_probs=probs)
     assert (refined > 0).sum() == 0                  # no prior support -> all debris
     assert info["likelihood_source"] == "dl_probs"
+
+
+def test_prior_probs_never_falls_back_silently(tmp_path):
+    import nibabel as nib
+    import pytest
+
+    from lats.nodes.prior import _refine_segmentation
+    dl, priors = _scene()
+    seg = str(tmp_path / "seg.nii.gz")
+    nib.save(nib.Nifti1Image(dl, np.eye(4)), seg)
+    files = [str(tmp_path / f"prior_{fid}.nii.gz") for fid in (1, 2)]
+    for k, f in enumerate(files):
+        nib.save(nib.Nifti1Image(priors[..., k], np.eye(4)), f)
+    with pytest.raises(Exception):
+        _refine_segmentation(seg, files, [1, 2], 0.5, 0.05, 1.0, 0.0, str(tmp_path / "out"),
+                             dl_probs="", use_probs=True)
+    _refine_segmentation(seg, files, [1, 2], 0.5, 0.05, 1.0, 0.0, str(tmp_path / "out"),
+                         dl_probs="", use_probs=False)

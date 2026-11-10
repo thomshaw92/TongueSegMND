@@ -135,7 +135,7 @@ def _refine_segmentation(
 
     # DL softmax probabilities (channel order [bg, *fg_ids]) -> the true likelihood.
     dl_probs_arr = None
-    if use_probs and dl_probs and _P(dl_probs).is_file():
+    if use_probs:
         pr = np.asarray(nib.load(dl_probs).get_fdata(), dtype=np.float32)
         if pr.ndim == 4 and pr.shape[-1] == len(fg_ids) + 1 and pr.shape[:3] == dl.shape:
             dl_probs_arr = pr
