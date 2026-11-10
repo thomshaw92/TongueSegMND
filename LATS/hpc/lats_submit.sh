@@ -15,7 +15,8 @@ Required:
 Slurm:
   -p, --partition NAME
   -A, --account NAME
-  -c, --cpus N             CPUs per run, also passed to LATS as -j (default: 8)
+  -c, --cpus N             CPUs per run, also passed to LATS as -j (default: 1;
+                           only 1 gives identical results when a run is repeated)
   -m, --mem SIZE           memory per run (default: 16G)
   -t, --time T             time limit per run (default: 04:00:00)
   -P, --max-parallel N     runs at once (default: 20)
@@ -25,6 +26,8 @@ Slurm:
       --logs DIR           Slurm logs and the frozen copy of the list
                            (default: ./lats_logs)
       --sbatch-args STR    extra sbatch options, e.g. "--qos=long --mail-type=FAIL"
+      --qa DIR             QA mode: re-apply the corrected template labels in DIR
+                           (a list made with lats_make_lists.sh --qa) instead of a full run
       --dry-run            print the sbatch command and submit nothing
   -h, --help               show this help
 
@@ -45,8 +48,8 @@ abs() { case $1 in /*) echo "$1" ;; *) echo "$PWD/$1" ;; esac; }
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 task=$here/lats_task.sh
-list= sif= partition= account= cpus=8 mem=16G time=04:00:00 maxpar=20 name=lats
-tasks= logs=lats_logs extra= dry=0
+list= sif= partition= account= cpus=1 mem=16G time=04:00:00 maxpar=20 name=lats
+tasks= logs=lats_logs extra= dry=0 qa=
 lats_args=(-M T1w -n --denoise --prior-refine --prior-probs)
 
 while [ $# -gt 0 ]; do
@@ -63,6 +66,7 @@ while [ $# -gt 0 ]; do
     --tasks) need "$@"; tasks=$2; shift ;;
     --logs) need "$@"; logs=$2; shift ;;
     --sbatch-args) need "$@"; extra=$2; shift ;;
+    --qa) need "$@"; qa=$2; shift ;;
     --dry-run) dry=1 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; lats_args=("$@"); break ;;
@@ -83,6 +87,7 @@ for a in "${lats_args[@]}"; do
   case $a in -o|--output-prefix|-j|--n-procs) die "LATS option $a is set per run; leave it out" ;; esac
 done
 [ ${#lats_args[@]} -gt 0 ] || die "no LATS options after --"
+[ -z "$qa" ] || { [ -d "$qa" ] || die "no such QA directory: $qa"; qa=$(cd "$qa" && pwd -P); }
 
 list=$(abs "$list")
 sif=$(abs "$sif")
@@ -96,6 +101,7 @@ cmd=(sbatch --parsable --job-name="$name" --array="${tasks}%${maxpar}"
      --output="$logs/${name}_%A_%a.out")
 [ -z "$partition" ] || cmd+=(--partition="$partition")
 [ -z "$account" ] || cmd+=(--account="$account")
+[ -z "$qa" ] || cmd+=(--export=ALL,LATS_QA_DIR="$qa")
 if [ -n "$extra" ]; then
   read -r -a extra_args <<<"$extra"
   cmd+=("${extra_args[@]}")

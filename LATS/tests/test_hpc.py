@@ -29,9 +29,15 @@ APPTAINER = """#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$STUB_LOG"
 while [ $# -gt 0 ]; do
   if [ "$1" = -o ]; then out=$2; fi
+  if [ "$1" = --qa-labels ]; then qa=$2; fi
   shift
 done
-if [ "$STUB_MODE" = ok ]; then mkdir -p "$out/stats"; echo x > "$out/stats/volumes.csv"; fi
+if [ "$STUB_MODE" = ok ]; then
+  mkdir -p "$out/stats"; echo x > "$out/stats/volumes.csv"
+  if [ -n "${qa:-}" ]; then
+    printf '{"sha256": "%s"}\\n' "$( (sha256sum "$qa" 2>/dev/null || shasum -a 256 "$qa") | cut -d' ' -f1)" > "$out/qa_applied.json"
+  fi
+fi
 """
 
 
@@ -174,3 +180,44 @@ def test_submit_and_task(bids, env, tmp_path):
     Path(env["STUB_LOG"]).unlink()
     r = _run("lats_task.sh", frozen, sif, *lats, env=env, cwd=tmp_path, extra_env=slurm)
     assert "already done" in r.stdout and not Path(env["STUB_LOG"]).exists()
+
+
+def test_qa_mode_lists_submits_and_reapplies(bids, env, tmp_path):
+    qa = bids / "derivatives" / "lats-qa"
+    f = qa / "sub-01" / "sub-01_space-sst_desc-qa_dseg.nii.gz"
+    f.parent.mkdir(parents=True)
+    f.write_bytes(b"labels")
+    _run("lats_make_lists.sh", "-b", bids, "-o", "q", "--qa", qa, env=env, cwd=tmp_path)
+    assert [r[0] for r in _rows(tmp_path / "q/longitudinal.tsv")] == ["sub-01"]
+    assert _rows(tmp_path / "q/cross-sectional.tsv") == []
+    assert "runs without QA labels left out: 2" in (tmp_path / "q/summary.txt").read_text()
+
+    sif = tmp_path / "lats.sif"
+    sif.write_text("")
+    _run("lats_submit.sh", "-l", tmp_path / "q/longitudinal.tsv", "-i", sif, "--qa", qa, env=env, cwd=tmp_path)
+    args = Path(env["STUB_LOG"]).read_text().splitlines()
+    assert f"--export=ALL,LATS_QA_DIR={qa.resolve()}" in args
+    frozen = Path(args[args.index(str(HPC / "lats_task.sh")) + 1])
+
+    out = Path(_rows(frozen)[0][2])
+    (out / "stats").mkdir(parents=True)
+    (out / "stats/volumes.csv").write_text("from the first run")
+    slurm = {"SLURM_ARRAY_TASK_ID": "1", "SLURM_CPUS_PER_TASK": "1", "STUB_MODE": "ok", "LATS_QA_DIR": str(qa.resolve())}
+    task = lambda **kw: _run("lats_task.sh", frozen, sif, "-M", "T1w", env=env, cwd=tmp_path, extra_env={**slurm, **kw}, ok=False)
+    r = task()
+    call = Path(env["STUB_LOG"]).read_text().splitlines()
+    assert r.returncode == 0 and "done:" in r.stdout
+    assert call[call.index("--qa-labels") + 1] == str(f.resolve())
+    assert f"{f.parent.resolve()}:{f.parent.resolve()}:ro" in call[3].split(",")
+
+    Path(env["STUB_LOG"]).unlink()
+    r = task()
+    assert "already applied" in r.stdout and not Path(env["STUB_LOG"]).exists()
+    _run("lats_make_lists.sh", "-b", bids, "-o", "q2", "--qa", qa, "--skip-done", env=env, cwd=tmp_path)
+    assert _rows(tmp_path / "q2/longitudinal.tsv") == []
+
+    f.write_bytes(b"labels, touched up again")
+    r = task(STUB_MODE="fail")
+    assert r.returncode == 1 and "QA labels applied: no" in r.stderr
+    r = task()
+    assert r.returncode == 0 and Path(env["STUB_LOG"]).exists()

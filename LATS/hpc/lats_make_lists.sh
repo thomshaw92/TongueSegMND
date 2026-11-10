@@ -43,6 +43,9 @@ Options:
                               none    no cross-sectional runs
       --cross-session LABEL   session used for cross-sectional runs (default: 01)
       --skip-done             leave out runs whose stats/volumes.csv already exists
+                              (with --qa: whose qa_applied.json matches the QA labels)
+      --qa DIR                QA mode: list only runs with corrected template labels in DIR
+                              (the QA app's derivatives/lats-qa), for lats_submit.sh --qa
   -h, --help                  show this help
 
 List format: tab separated, one run per line, no header:
@@ -63,7 +66,7 @@ fi
 
 args=("$@")
 bids= out=lats_lists deriv= suffix=T1w ext=.nii.gz acq= rec= run= multi=skip
-min_ses=2 max_ses=0 cross=single cross_ses=01 skip_done=0
+min_ses=2 max_ses=0 cross=single cross_ses=01 skip_done=0 qa=
 include=() exclude=() sessions=()
 
 while [ $# -gt 0 ]; do
@@ -85,6 +88,7 @@ while [ $# -gt 0 ]; do
     --cross) need "$@"; cross=$2; shift ;;
     --cross-session) need "$@"; cross_ses=${2#ses-}; shift ;;
     --skip-done) skip_done=1 ;;
+    --qa) need "$@"; qa=$2; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option '$1' (see --help)" ;;
   esac
@@ -95,6 +99,7 @@ done
 [ -d "$bids" ] || die "no such directory: $bids"
 bids=$(cd "$bids" && pwd -P)
 deriv=$(abs "${deriv:-$bids/derivatives/lats}")
+[ -z "$qa" ] || { [ -d "$qa" ] || die "no such QA directory: $qa"; qa=$(cd "$qa" && pwd -P); }
 case $multi in skip|first|last) ;; *) die "--multi must be skip, first or last" ;; esac
 case $cross in single|all|none) ;; *) die "--cross must be single, all or none" ;; esac
 [[ $min_ses =~ ^[0-9]+$ ]] && [ "$min_ses" -ge 2 ] || die "--min-sessions must be a whole number, at least 2"
@@ -112,15 +117,33 @@ excl_tsv=$out/excluded.tsv
 : >"$cross_tsv"
 printf 'subject\tsession\treason\n' >"$excl_tsv"
 
-n_sub=0 n_long=0 n_cross=0 n_excl=0 n_done=0
+n_sub=0 n_long=0 n_cross=0 n_excl=0 n_done=0 n_noqa=0
 declare -A per_n=()
 
 excl() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$excl_tsv"; n_excl=$((n_excl + 1)); }
 
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+qa_labels() {
+  local id=$1 sub=${1%%_*}
+  if [ "$id" = "$sub" ]; then echo "$qa/$sub/${sub}_space-sst_desc-qa_dseg.nii.gz"
+  else echo "$qa/$sub/${id#*_}/${id}_space-sst_desc-qa_dseg.nii.gz"; fi
+}
+
 emit() {
   local file=$1 id=$2 kind=$3 dir=$4
   shift 4
-  if [ "$skip_done" = 1 ] && [ -s "$dir/stats/volumes.csv" ]; then
+  if [ -n "$qa" ]; then
+    local q
+    q=$(qa_labels "$id")
+    if [ ! -f "$q" ]; then
+      n_noqa=$((n_noqa + 1))
+      return 1
+    fi
+    if [ "$skip_done" = 1 ] && grep -q "\"sha256\": \"$(sha256 "$q")\"" "$dir/qa_applied.json" 2>/dev/null; then
+      n_done=$((n_done + 1))
+      return 1
+    fi
+  elif [ "$skip_done" = 1 ] && [ -s "$dir/stats/volumes.csv" ]; then
     n_done=$((n_done + 1))
     return 1
   fi
@@ -216,6 +239,7 @@ done
   echo "longitudinal runs: $n_long"
   for k in $(printf '%s\n' "${!per_n[@]}" | sort -n); do echo "  with $k sessions: ${per_n[$k]}"; done
   echo "cross-sectional runs (ses-$cross_ses, --cross $cross): $n_cross"
+  [ -z "$qa" ] || echo "QA mode: $qa; runs without QA labels left out: $n_noqa"
   [ "$skip_done" = 0 ] || echo "already done, left out: $n_done"
   echo "excluded.tsv entries: $n_excl"
   echo "lists in: $(cd "$out" && pwd -P)"

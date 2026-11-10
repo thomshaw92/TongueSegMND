@@ -123,3 +123,50 @@ def test_relative_atlas_dir_is_made_absolute(tmp_path, monkeypatch):
     args = _build_parser().parse_args(
         ["-o", "out", "--atlas-dir", "atlas", "ses0_T1w.nii.gz"])
     assert _config_from_args(args).atlas_dir == (tmp_path / "atlas").resolve()
+
+
+def _finished_run(tmp_path, n_tp=2):
+    import nibabel as nib
+    import numpy as np
+    cfg = _config(tmp_path, n_tp=n_tp)
+    out = cfg.output_prefix
+    for rel in ["sst/T_template0.nii.gz", "stats/volumes.csv", "lats_run.json"] + [
+            f"intermediate/reg/tp{i:02d}_{s}" for i in range(n_tp) for s in ("0GenericAffine.mat", "1Warp.nii.gz", "1InverseWarp.nii.gz")] + [
+            f"intermediate/prep_crop/tp{i:02d}/native2template_0GenericAffine.mat" for i in range(n_tp)]:
+        (out / rel).parent.mkdir(parents=True, exist_ok=True)
+        (out / rel).write_bytes(b"x")
+    nib.save(nib.Nifti1Image(np.zeros((4, 4, 4), np.float32), np.eye(4)), out / "sst/T_template0.nii.gz")
+    return cfg
+
+
+def test_reapply_reuses_the_run_and_keeps_its_outputs(tmp_path):
+    import nibabel as nib
+    import numpy as np
+    from lats.reapply import prepare_reapply
+    cfg = _finished_run(tmp_path)
+    qa = tmp_path / "sub-01_space-sst_desc-qa_dseg.nii.gz"
+    nib.save(nib.Nifti1Image(np.ones((4, 4, 4), np.uint8), np.eye(4)), qa)
+    (tmp_path / "sub-01_space-sst_desc-qa_dseg.json").write_text(json.dumps({"midline": {"point_mm": [1, 2, 3], "normal": [1, 0, 0]}}))
+    cfg = dataclasses.replace(cfg, qa_labels=qa)
+    prepare_reapply(cfg)
+    out = cfg.output_prefix
+    assert (out / "pre_qa/stats/volumes.csv").is_file() and (out / "pre_qa/lats_run.json").is_file()
+    assert not (out / "stats").exists()
+    assert json.loads((out / "qa_applied.json").read_text())["midline_from"].endswith("_dseg.json")
+    names = set(build_workflow(dataclasses.replace(cfg, shape=True)).list_node_names())
+    assert "reuse" in names and "warp_labels" in names and "lateralise" in names
+    assert not names & {"preprocess", "prep_crop", "sst", "segment_sst", "register"}
+
+
+def test_reapply_rejects_labels_off_the_template_grid(tmp_path):
+    import nibabel as nib
+    import numpy as np
+    from lats.reapply import prepare_reapply
+    cfg = _finished_run(tmp_path)
+    qa = tmp_path / "wrong_grid.nii.gz"
+    nib.save(nib.Nifti1Image(np.ones((5, 4, 4), np.uint8), np.eye(4)), qa)
+    with pytest.raises(ValueError, match="template grid"):
+        prepare_reapply(dataclasses.replace(cfg, qa_labels=qa))
+    (cfg.output_prefix / "intermediate/reg/tp01_1Warp.nii.gz").unlink()
+    with pytest.raises(FileNotFoundError, match="tp01_1Warp"):
+        prepare_reapply(dataclasses.replace(cfg, qa_labels=qa))

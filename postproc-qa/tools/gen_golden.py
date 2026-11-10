@@ -63,9 +63,33 @@ dump("inferior_clip", R.suplong_inferior_clip(L))
 dump("surface_trim", R.surface_trim(L, img, lo, hi))
 dump("clean", R.clean_labels(L, 1))
 dump("smooth", R.smooth_labels(L, 0.8))
+post = L.copy()
+post[:, :, int(cz) + 6:] = 0
+dump("follow_post", post)
+dump("follow_dorsum", R.follow_dorsum(L, post))
 dump("pipeline_gentle", R.run_pipeline(L, img, ZOOMS, {
     "thin": True, "inferior_clip": True, "surface_trim": True,
-    "clean": True, "smooth": True}))
+    "clean": True, "follow_dorsum": True, "smooth": True}))
+
+# midline: an elongated, rotated tongue-like ellipsoid with an off-centre genioglossus core
+ia, ja, ka = np.meshgrid(np.arange(NX), np.arange(NY), np.arange(NZ), indexing="ij")
+M = np.zeros((NX, NY, NZ), dtype=np.int32)
+M[((ia - 10.5) / 5) ** 2 + ((ja - 12.5) / 11) ** 2 + ((ka - 11.5) / 8) ** 2 < 1] = R.VERTICAL
+M[(M > 0) & (np.abs(ia - 11.5) < 1.6) & (ka < 11)] = R.GENIO
+th, ph = np.radians(9), np.radians(-6)
+rot = np.array([[np.cos(th), -np.sin(th), 0], [np.sin(th), np.cos(th), 0], [0, 0, 1]]) @ \
+      np.array([[np.cos(ph), 0, np.sin(ph)], [0, 1, 0], [-np.sin(ph), 0, np.cos(ph)]])
+AFF = np.eye(4)
+AFF[:3, :3] = rot @ np.diag(ZOOMS)
+AFF[:3, 3] = [-12.3, 4.5, 30.2]
+dump("midline_label", M)
+res = {"affine": AFF.tolist()}
+for mode in ("gg", "tilt"):
+    p, n = R.midline_plane(M, AFF, mode)
+    pa, na = R.adjust_plane(p, n, 1.5, 7.0, -4.0)
+    res[mode] = {"point": p.tolist(), "normal": n.tolist(), "counts": R.lateral_counts(M, AFF, p, n),
+                 "adj_point": pa.tolist(), "adj_normal": na.tolist(), "adj_counts": R.lateral_counts(M, AFF, pa, na)}
+json.dump(res, open(os.path.join(OUT, "midline.json"), "w"))
 
 print("golden written to", OUT)
 print("phantom:", (NX, NY, NZ), "labels present:", sorted(np.unique(L).tolist()))

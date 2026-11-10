@@ -115,16 +115,22 @@ def _build_parser() -> argparse.ArgumentParser:
                           "smoothed one-hot of the hard labels. Requires a segmenter "
                           "that supports --save-probs")
 
+    qa = p.add_argument_group("QA")
+    qa.add_argument("--qa-labels", type=Path, default=None,
+                    help="corrected template labels from the QA app (derivatives/lats-qa); re-applies them to the "
+                         "sessions of the finished run in -o, reusing its template and registrations, and uses the "
+                         "midline saved with them. The run's earlier outputs are kept in pre_qa/")
     lat = p.add_argument_group("lateralisation")
     lat.add_argument("--midline-label", type=int, default=4,
                      help="label whose centroid defines the midline "
                           "(4 = genioglossus, the bottom-most)")
-    lat.add_argument("--midline-mode", default="centroid",
-                     choices=("centroid", "pca"),
-                     help="'centroid' uses the canonical Right axis as the plane "
-                          "normal; 'pca' takes it from the tongue's least-elongated "
-                          "principal axis (tolerates head tilt, fails if the LR axis "
-                          "is not the smallest)")
+    lat.add_argument("--midline-mode", default="mirror",
+                     choices=("mirror", "centroid", "pca"),
+                     help="'mirror' registers the template to its left-right mirror image "
+                          "and splits at the plane halfway between them; 'centroid' uses "
+                          "the canonical Right axis through the --midline-label centroid; "
+                          "'pca' takes the normal from the tongue's least-elongated "
+                          "principal axis")
 
     exe = p.add_argument_group("execution")
     exe.add_argument("-c", "--plugin", default="Linear",
@@ -159,9 +165,11 @@ def _config_from_args(args) -> LatsConfig:
         timepoints=timepoints,
         modality=args.modality,
         runtime=args.runtime,
-        container=args.container,
-        pipeline=args.pipeline,
-        assets=args.assets,
+        container=(str(Path(args.container).resolve())
+                   if args.container and Path(args.container).is_file() else args.container),
+        pipeline=args.pipeline.resolve() if args.pipeline else None,
+        assets=args.assets.resolve() if args.assets else None,
+        qa_labels=args.qa_labels.resolve() if args.qa_labels else None,
         container_args=args.container_args,
         postproc=not args.no_postproc,
         template_iterations=args.template_iterations,
@@ -202,7 +210,7 @@ def _write_manifest(config: LatsConfig) -> None:
     """Write the full run config to ``lats_run.json``."""
     payload = {
         **dataclasses.asdict(config),
-        "runtime": config.resolved_runtime(),
+        "runtime": "reuse" if config.qa_labels else config.resolved_runtime(),
         "timepoints": [
             {"index": tp.index, "subject_id": tp.subject_id, "image": str(tp.image)}
             for tp in config.timepoints
@@ -263,6 +271,13 @@ def main(argv: list[str] | None = None) -> int:
     for w in warnings:
         print(f"warning: {w}", file=sys.stderr)
 
+    if config.qa_labels:
+        from .reapply import prepare_reapply
+        try:
+            prepare_reapply(config)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
     config.output_prefix.mkdir(parents=True, exist_ok=True)
     _write_manifest(config)
 
@@ -278,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     plugin_args = {"n_procs": config.n_procs} if config.plugin == "MultiProc" else None
+    os.environ.setdefault("ANTS_RANDOM_SEED", "1")
+    os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(config.n_procs)
 
     try:
         wf.run(plugin=config.plugin, plugin_args=plugin_args)

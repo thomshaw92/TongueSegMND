@@ -64,7 +64,7 @@ class LatsConfig:
     # lateralisation
     # Midline passes through this label's centroid (4 = genioglossus).
     midline_label: int = 4
-    midline_mode: str = "centroid"   # 'centroid' | 'pca'
+    midline_mode: str = "mirror"   # 'mirror' | 'centroid' | 'pca'
 
     # atlas-prior refinement (FreeSurfer-aseg style)
     prior_refine: bool = False       # opt-in: refine the SST seg with the atlas
@@ -78,6 +78,7 @@ class LatsConfig:
     prior_dilate_mm: float = 0.0
     # Softmax likelihood; needs a segmenter that supports --save-probs.
     prior_use_probs: bool = False
+    qa_labels: Path | None = None
 
     @property
     def n_timepoints(self) -> int:

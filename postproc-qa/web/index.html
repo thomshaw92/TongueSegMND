@@ -3,81 +3,131 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tongue Post-processing QA</title>
+<title>Tongue QA</title>
 <link rel="stylesheet" href="css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@niivue/niivue@0.44.2/dist/niivue.umd.js"></script>
 </head>
 <body>
-<header>
-  <h1>Tongue segmentation post-processing QA</h1>
-  <p class="sub">Load a T1w or Spine-T2w image and its segmentation, toggle the
-  post-processing steps, and see the result live. Everything runs in your browser;
-  your images never leave your machine.</p>
+<header class="top">
+  <h1>Tongue QA</h1>
+  <button id="openFolder" class="primary">Open BIDS folder</button>
+  <button id="reopenFolder" hidden></button>
+  <label>Initials <input id="rater" size="5" maxlength="8" autocomplete="off"></label>
+  <span id="folderName" class="muted"></span>
+  <span class="switch"><button id="passTemplate" class="on">Templates</button><button id="passSession">Sessions</button></span>
+  <span id="progress" class="muted"></span>
 </header>
+
+<nav class="itembar">
+  <button id="prevItem" title="Previous ( [ )">Previous</button>
+  <select id="itemList"></select>
+  <span id="itemStatus" class="chip"></span>
+  <button id="nextItem" title="Next ( ] )">Next</button>
+  <button id="nextTodo">Next to do</button>
+  <span id="status" class="status">Open the BIDS folder that holds derivatives/lats.</span>
+</nav>
 
 <main>
   <section class="panel controls">
-    <h2>1. Load</h2>
-    <label class="file">Image (.nii/.nii.gz)
-      <input type="file" id="imageFile" accept=".nii,.nii.gz,.gz">
-    </label>
-    <label class="file">Segmentation (.nii/.nii.gz)
-      <input type="file" id="labelFile" accept=".nii,.nii.gz,.gz">
-    </label>
-    <p id="status" class="status">Waiting for both files.</p>
+    <ol id="stepper" class="stepper"></ol>
 
-    <h2>2. Post-processing steps</h2>
-    <div class="step">
-      <label><input type="checkbox" id="thin"> Sup-long thin (gentle, depth only)</label>
-      <div class="sub-ctrl">keep <input type="range" id="keepFrac" min="0.6" max="1" step="0.01" value="0.88">
-        <span id="keepFracV">0.88</span> of sup-long</div>
-    </div>
-    <div class="step">
-      <label><input type="checkbox" id="inferiorClip"> Inferior clip (sup-long not below vertical)</label>
-    </div>
-    <div class="step">
-      <label><input type="checkbox" id="surfaceTrim"> Surface trim (tissue-band)</label>
-      <div class="sub-ctrl">k <input type="range" id="trimK" min="0.8" max="3" step="0.1" value="1.5">
-        <span id="trimKV">1.5</span>
-        <label class="inline"><input type="checkbox" id="trimAll" checked> all muscles</label></div>
-    </div>
-    <div class="step">
-      <label><input type="checkbox" id="clean"> Clean (erode, largest-CC, dilate)</label>
-      <div class="sub-ctrl">iters <input type="range" id="cleanIters" min="1" max="3" step="1" value="1">
-        <span id="cleanItersV">1</span></div>
-    </div>
-    <div class="step">
-      <label><input type="checkbox" id="smooth"> Smooth (Gaussian probabilistic majority)</label>
-      <div class="sub-ctrl">sigma <input type="range" id="sigma" min="0.4" max="2.5" step="0.1" value="0.8">
-        <span id="sigmaV">0.8</span></div>
-    </div>
-    <div class="preset">
-      <button id="presetGentle">Gentle preset</button>
-      <button id="presetReset">Reset (raw)</button>
+    <div class="card">
+      <div class="cardhead"><h2 id="stepTitle">Start</h2><button id="infoBtn" class="info" title="More information">i</button></div>
+      <p id="stepWhat" class="what">Open the BIDS folder, enter your initials, then work through the steps.</p>
+      <div id="stepInfo" class="infobox" hidden></div>
+
+      <div class="stepbody" data-step="mri">
+        <div class="grades" data-scale="mri"></div>
+        <p class="anchor" data-anchor="mri"></p>
+        <div class="row"><button class="toExclude">Exclude (scan unusable)</button></div>
+      </div>
+
+      <div class="stepbody" data-step="raw">
+        <div class="grades" data-scale="seg_raw"></div>
+        <p class="anchor" data-anchor="seg_raw"></p>
+        <div class="row"><button id="acceptRaw">Accept as is (A)</button><button class="toExclude">Exclude</button></div>
+      </div>
+
+      <div class="stepbody" data-step="surface">
+        <label class="ctl"><input type="checkbox" id="thin"> Thin superior longitudinal</label>
+        <div class="sub-ctrl">keep <input type="range" id="keepFrac" min="0.6" max="1" step="0.01" value="0.88"> <span id="keepFracV">0.88</span></div>
+        <label class="ctl"><input type="checkbox" id="inferiorClip"> Clip superior longitudinal below vertical</label>
+        <label class="ctl"><input type="checkbox" id="surfaceTrim"> Trim surface voxels outside the tissue band</label>
+        <div class="sub-ctrl">k <input type="range" id="trimK" min="0.8" max="3" step="0.1" value="1.5"> <span id="trimKV">1.5</span>
+          <label class="inline"><input type="checkbox" id="trimAll" checked> all muscles</label></div>
+      </div>
+
+      <div class="stepbody" data-step="smooth">
+        <label class="ctl"><input type="checkbox" id="followDorsum"> Follow the dorsum</label>
+        <label class="ctl"><input type="checkbox" id="clean"> Clean (erode, keep largest piece, dilate)</label>
+        <div class="sub-ctrl">iterations <input type="range" id="cleanIters" min="1" max="3" step="1" value="1"> <span id="cleanItersV">1</span></div>
+        <label class="ctl"><input type="checkbox" id="smooth"> Smooth</label>
+        <div class="sub-ctrl">sigma <input type="range" id="sigma" min="0.4" max="2.5" step="0.1" value="0.8"> <span id="sigmaV">0.8</span></div>
+      </div>
+
+      <div class="stepbody" data-step="midline">
+        <div class="sub-ctrl">from <select id="midlineMode">
+          <option value="lats" disabled>LATS mirror plane</option>
+          <option value="gg">genioglossus centroid</option>
+          <option value="tilt">tilted to tongue shape</option>
+        </select></div>
+        <div class="sub-ctrl">shift <input type="range" id="mlShift" min="-10" max="10" step="0.5" value="0"> <span id="mlShiftV">0</span> mm</div>
+        <div class="sub-ctrl">yaw <input type="range" id="mlYaw" min="-20" max="20" step="1" value="0"> <span id="mlYawV">0</span> deg</div>
+        <div class="sub-ctrl">roll <input type="range" id="mlRoll" min="-20" max="20" step="1" value="0"> <span id="mlRollV">0</span> deg</div>
+        <div class="row"><button id="mlReset">Reset midline</button></div>
+      </div>
+
+      <div class="stepbody" data-step="final">
+        <div class="grades" data-scale="seg_final"></div>
+        <p class="anchor" data-anchor="seg_final"></p>
+      </div>
+
+      <div class="stepbody" data-step="decide">
+        <div class="row"><button id="include" class="primary">Include: save labels and go to next (S)</button></div>
+        <div class="row"><button id="touchUp">Touch up in ITK-SNAP</button><button id="exclude">Exclude</button></div>
+        <div id="touchPanel" hidden>
+          <label class="ctl">This BIDS folder's full path <input id="rootPath" placeholder="/path/to/bids"></label>
+          <pre id="itkCmd" class="cmd"></pre>
+          <div class="row"><button id="copyCmd">Copy command</button><button id="reloadEdit">Reload edited labels</button><button id="undoTouch">Undo touch-up</button></div>
+        </div>
+        <div id="excludePanel" hidden>
+          <select id="excludeReason">
+            <option>MRI unusable</option><option>segmentation unusable</option><option>wrong or missing anatomy</option><option>other (see notes)</option>
+          </select>
+          <button id="confirmExclude">Exclude and go to next</button>
+        </div>
+      </div>
+
+      <div class="nav"><button id="backStep">Back</button><button id="nextStep" class="primary">Next step (Enter)</button></div>
     </div>
 
-    <h2>3. QC</h2>
-    <table id="qc" class="qc">
-      <tr><td>sup-long / tongue</td><td id="qcRatio">-</td><td class="norm">norm 0.31 (0.24-0.39)</td></tr>
-      <tr><td>sup-long not-tissue</td><td id="qcSlNt">-</td><td class="norm">lower is better</td></tr>
-      <tr><td>tongue not-tissue</td><td id="qcFgNt">-</td><td class="norm">high = check scan</td></tr>
-      <tr><td>sup-long volume</td><td id="qcVol">-</td><td class="norm">mL</td></tr>
-    </table>
-
-    <h2>4. Save</h2>
-    <button id="download" disabled>Download corrected labels</button>
-    <button id="downloadRecipe" disabled>Download recipe.json</button>
+    <div class="card">
+      <h3>QC</h3>
+      <table class="qc">
+        <tr><td>sup-long / tongue</td><td id="qcRatio">-</td><td class="norm">norm 0.31 (0.24-0.39)</td></tr>
+        <tr><td>sup-long not-tissue</td><td id="qcSlNt">-</td><td class="norm">lower is better</td></tr>
+        <tr><td>tongue not-tissue</td><td id="qcFgNt">-</td><td class="norm">high = check scan</td></tr>
+        <tr><td>sup-long volume</td><td id="qcVol">-</td><td class="norm">mL</td></tr>
+        <tr><td>left / right</td><td id="qcLR">-</td><td class="norm">mL</td></tr>
+        <tr><td>asymmetry</td><td id="qcAsym">-</td><td class="norm">(L-R)/mean</td></tr>
+      </table>
+    </div>
+    <textarea id="notes" rows="2" placeholder="Notes for this item"></textarea>
   </section>
 
   <section class="panel viewer">
+    <div class="viewbar">
+      <label><input type="checkbox" id="showCorrected" checked> corrected (B)</label>
+      <label>opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.6"></label>
+      <label><input type="checkbox" id="showMidline" checked> midline</label>
+      <span class="legend"><i class="l1"></i>vertical <i class="l2"></i>sup-long <i class="l3"></i>inf-long <i class="l4"></i>genioglossus</span>
+    </div>
     <div id="nv"><canvas id="gl"></canvas></div>
   </section>
 </main>
 
-<footer>
-  <p>Label colours: red vertical, green superior-long, blue inferior-long, gold
-  genioglossus.</p>
-</footer>
+<footer><p>Keys: 1 to 5 rate, Enter next step, B before/after, A accept as is, S save, [ and ] previous and next.
+Everything runs in your browser; files stay on this machine. Needs Chrome or Edge.</p></footer>
 
 <script type="module" src="js/app.js"></script>
 </body>

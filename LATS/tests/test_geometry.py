@@ -199,3 +199,30 @@ def test_midline_pca_mode_tolerates_rotation():
     # PCA picks the smallest extent (SI here); check the normal is unit and +R.
     assert abs(np.linalg.norm(normal) - 1.0) < 1e-9
     assert normal[0] >= 0.0
+
+
+def test_mirror_plane_recovers_a_tilted_plane():
+    from lats.utils.geometry import mirror_plane
+    n0 = np.array([0.95, 0.25, -0.18]); n0 /= np.linalg.norm(n0)
+    p0 = np.array([3.0, -7.0, 12.0])
+    refl = np.eye(4)
+    refl[:3, :3] = np.eye(3) - 2 * np.outer(n0, n0)
+    refl[:3, 3] = 2 * (n0 @ p0) * n0
+    coords = np.random.default_rng(1).normal(size=(500, 3)) * 10 + p0
+    point, normal = mirror_plane(coords, refl)
+    assert np.allclose(normal, n0, atol=1e-9)
+    assert abs((point - p0) @ n0) < 1e-9
+
+
+def test_ants_affine_ras_handles_centre_and_lps(tmp_path):
+    import scipy.io as sio
+    from lats.utils.geometry import ants_affine_ras
+    th = np.radians(10)
+    a = np.array([[np.cos(th), -np.sin(th), 0], [np.sin(th), np.cos(th), 0], [0, 0, 1]])
+    t, c = np.array([1.0, 2.0, 3.0]), np.array([10.0, -5.0, 4.0])
+    sio.savemat(tmp_path / "x.mat", {"AffineTransform_double_3_3": np.r_[a.ravel(), t][:, None], "fixed": c[:, None]})
+    m = ants_affine_ras(tmp_path / "x.mat")
+    x_lps = np.array([4.0, -2.0, 7.0])
+    y_lps = a @ (x_lps - c) + c + t
+    d = np.array([-1.0, -1.0, 1.0])
+    assert np.allclose(m[:3, :3] @ (d * x_lps) + m[:3, 3], d * y_lps)

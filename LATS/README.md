@@ -36,7 +36,8 @@ Give one image per session, in acquisition order. Main flags: `--container`, `--
 ## Outputs
 
 - `lats_run.json` (run configuration) and `labels.txt` (label ids and names).
-- `sst/` (template and its segmentation), `labels/` and `labels_lateral/` (labels in each session's native space).
+- `sst/` (template and its segmentation), `labels/` and `labels_lateral/` (labels in each session's native space). Left and right are split at the template's mirror-symmetry plane, recorded in `sst/midline.json`.
+- After QA, `lats -o <run> --qa-labels <corrected template labels> <images>` re-applies the corrections to every session, reusing the run's template and registrations; the earlier outputs move to `pre_qa/`.
 - `jacobian/` (Jacobian and log-Jacobian images), `shape/` (descriptors and SST meshes) and `stats/` (`volumes.csv`, `longitudinal.csv`, `shape.csv`, `asymmetry.csv`).
 - `qc/` (montages, QC images and labels) and `intermediate/` (working files, including the SST-to-session registrations).
 

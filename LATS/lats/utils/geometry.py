@@ -254,6 +254,32 @@ def midline_plane(labels: np.ndarray, affine: np.ndarray, midline_label: int,
     return point, normal
 
 
+def ants_affine_ras(mat_path) -> np.ndarray:
+    """4x4 RAS matrix of an ANTs ``.mat`` affine (maps fixed-space points to moving-space points)."""
+    import scipy.io as sio
+
+    m = sio.loadmat(mat_path)
+    key = next(k for k in m if "Transform" in k and k.endswith("_3_3"))
+    p = np.asarray(m[key], dtype=float).ravel()
+    c = np.asarray(m["fixed"], dtype=float).ravel()
+    a, t = p[:9].reshape(3, 3), p[9:12]
+    d = np.diag([-1.0, -1.0, 1.0])
+    out = np.eye(4)
+    out[:3, :3] = d @ a @ d
+    out[:3, 3] = d @ (t + c - a @ c)
+    return out
+
+
+def mirror_plane(coords: np.ndarray, reflection: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Plane of a (near-)reflection mapping points to their mirror partners: (point_mm, unit normal toward +x)."""
+    q = reflection[:3, :3]
+    normal = np.linalg.eigh((q + q.T) / 2)[1][:, 0]
+    if normal[0] < 0:
+        normal = -normal
+    mapped = coords @ q.T + reflection[:3, 3]
+    return ((coords + mapped) / 2).mean(axis=0), normal / np.linalg.norm(normal)
+
+
 def lateralise(labels: np.ndarray, affine: np.ndarray, point: np.ndarray,
                normal: np.ndarray) -> np.ndarray:
     """Split a label map about a plane into left (+100) and right (+200) ids."""

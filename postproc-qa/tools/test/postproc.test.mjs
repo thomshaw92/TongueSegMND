@@ -47,10 +47,29 @@ test('surfaceTrim', () => {
   eqInt(P.surfaceTrim(L, img, dims, g.lo, g.hi), load('surface_trim'), 'surface_trim');
 });
 test('cleanLabels', () => eqInt(P.cleanLabels(L, dims, 1), load('clean'), 'clean'));
+test('followDorsum', () => {
+  const post = Int32Array.from(load('follow_post').data);
+  eqInt(P.followDorsum(L, post, dims), load('follow_dorsum'), 'follow_dorsum');
+});
 test('smoothLabels', () => eqInt(P.smoothLabels(L, dims, 0.8), load('smooth'), 'smooth'));
 test('runPipeline gentle (full)', () => {
   const out = P.runPipeline(L, img, dims, zooms, {
-    thin: true, inferiorClip: true, surfaceTrim: true, clean: true, smooth: true,
+    thin: true, inferiorClip: true, surfaceTrim: true, clean: true, followDorsum: true, smooth: true,
   });
   eqInt(out, load('pipeline_gentle'), 'pipeline_gentle');
+});
+
+test('midline planes, adjustment and left/right counts', () => {
+  const g = load('midline'), ml = load('midline_label'), M = Int32Array.from(ml.data);
+  const close = (a, b, name) => a.forEach((x, i) => assert.ok(Math.abs(x - b[i]) < 1e-6, `${name}: ${a} vs ${b}`));
+  for (const mode of ['gg', 'tilt']) {
+    const p = P.midlinePlane(M, ml.dims, g.affine, mode), e = g[mode];
+    close(p.point, e.point, mode + ' point'); close(p.normal, e.normal, mode + ' normal');
+    const c = P.lateralCounts(M, ml.dims, g.affine, p);
+    assert.deepStrictEqual([c.left, c.right], e.counts, mode + ' counts');
+    const a = P.adjustPlane(p, 1.5, 7, -4);
+    close(a.point, e.adj_point, mode + ' adjusted point'); close(a.normal, e.adj_normal, mode + ' adjusted normal');
+    const ca = P.lateralCounts(M, ml.dims, g.affine, a);
+    assert.deepStrictEqual([ca.left, ca.right], e.adj_counts, mode + ' adjusted counts');
+  }
 });

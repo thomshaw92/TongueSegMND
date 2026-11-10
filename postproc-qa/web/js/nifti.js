@@ -22,7 +22,10 @@ export function readNifti(buf) {
   for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
     dataC[(x * ny + y) * nz + z] = raw[f++] * sclSlope + sclInter;
   }
-  return { dims: [nx, ny, nz], zooms, dataC, header: new Uint8Array(buf.slice(0, voxOffset)) };
+  const affine = dv.getInt16(254, true) > 0
+    ? [0, 1, 2].map(r => [0, 1, 2, 3].map(c => gf(280 + 16 * r + 4 * c))).concat([[0, 0, 0, 1]])
+    : [[zooms[0], 0, 0, 0], [0, zooms[1], 0, 0], [0, 0, zooms[2], 0], [0, 0, 0, 1]];
+  return { dims: [nx, ny, nz], zooms, affine, dataC, header: new Uint8Array(buf.slice(0, voxOffset)) };
 }
 
 // Write a label volume (uint8) reusing the input header, patched to datatype 2.

@@ -208,6 +208,26 @@ def clean_labels(labels, iters=1):
     return out
 
 
+def follow_dorsum(pre, post):
+    """Refill each superior-inferior column of ``post`` with the ``pre`` label stack, stretched to fit."""
+    out = post.copy()
+    nx, ny, nz = post.shape
+    for x in range(nx):
+        for y in range(ny):
+            p = np.nonzero(pre[x, y])[0]
+            q = np.nonzero(post[x, y])[0]
+            if p.size == 0 or q.size == 0:
+                continue
+            p0, p1, q0, q1 = int(p[0]), int(p[-1]), int(q[0]), int(q[-1])
+            for z in range(q0, q1 + 1):
+                if post[x, y, z] == 0:
+                    continue
+                zs = p0 + (int(np.floor((z - q0) * (p1 - p0) / (q1 - q0) + 0.5)) if q1 > q0 else 0)
+                if pre[x, y, zs] > 0:
+                    out[x, y, z] = pre[x, y, zs]
+    return out
+
+
 def smooth_labels(labels, sigma=0.8):
     """Probabilistic-majority smoothing: blur each label mask, take the argmax."""
     fg = labels > 0
@@ -248,12 +268,51 @@ def run_pipeline(labels, image, zooms, steps):
         out = thin_suplong(out, zooms, steps.get("keep_frac", 0.88))
     if steps.get("inferior_clip"):
         out = suplong_inferior_clip(out)
+    pre = out.copy()
     if steps.get("surface_trim"):
         lo, hi = tissue_band(image, out, steps.get("trim_k", 1.5))
         which = LABELS if steps.get("trim_all", True) else (SUPLONG,)
         out = surface_trim(out, image, lo, hi, which=which)
     if steps.get("clean"):
         out = clean_labels(out, steps.get("clean_iters", 1))
+    if steps.get("follow_dorsum"):
+        out = follow_dorsum(pre, out)
     if steps.get("smooth"):
         out = smooth_labels(out, steps.get("sigma", 0.8))
     return out
+
+
+def world_coords(mask, affine):
+    return np.argwhere(mask) @ affine[:3, :3].T + affine[:3, 3]
+
+
+def midline_plane(labels, affine, mode="gg"):
+    """Mid-sagittal plane (point_mm, unit normal toward +x): genioglossus centroid, normal along x or tilted (PCA)."""
+    m = labels == GENIO
+    if not m.any():
+        m = labels > 0
+    point = world_coords(m, affine).mean(0)
+    normal = np.array([1.0, 0.0, 0.0])
+    if mode == "tilt":
+        c = world_coords(labels > 0, affine)
+        c = c - c.mean(0)
+        normal = np.linalg.eigh(c.T @ c / len(c))[1][:, 0]
+    if normal[0] < 0:
+        normal = -normal
+    return point, normal / np.linalg.norm(normal)
+
+
+def adjust_plane(point, normal, shift_mm=0.0, yaw_deg=0.0, roll_deg=0.0):
+    a, b = np.radians(yaw_deg), np.radians(roll_deg)
+    rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+    ry = np.array([[np.cos(b), 0, np.sin(b)], [0, 1, 0], [-np.sin(b), 0, np.cos(b)]])
+    n = rz @ ry @ normal
+    n = n / np.linalg.norm(n)
+    return point + shift_mm * n, n
+
+
+def lateral_counts(labels, affine, point, normal):
+    """Foreground voxels (left, right) of the plane; right is the +normal side."""
+    s = (world_coords(labels > 0, affine) - point) @ normal
+    return int((s <= 0).sum()), int((s > 0).sum())
+
