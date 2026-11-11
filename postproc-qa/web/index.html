@@ -52,15 +52,15 @@
         <label class="ctl"><input type="checkbox" id="thin"> Thin superior longitudinal</label>
         <div class="sub-ctrl">keep <input type="range" id="keepFrac" min="0.6" max="1" step="0.01" value="0.88"> <span id="keepFracV">0.88</span></div>
         <label class="ctl"><input type="checkbox" id="inferiorClip"> Clip superior longitudinal below vertical</label>
+        <label class="ctl"><input type="checkbox" id="slCap"> Keep superior longitudinal as a continuous cap</label>
         <label class="ctl"><input type="checkbox" id="surfaceTrim"> Trim surface voxels outside the tissue band</label>
         <div class="sub-ctrl">k <input type="range" id="trimK" min="0.8" max="3" step="0.1" value="1.5"> <span id="trimKV">1.5</span>
-          <label class="inline"><input type="checkbox" id="trimAll" checked> all muscles</label></div>
+          <label class="inline"><input type="checkbox" id="trimAll"> all muscles</label></div>
       </div>
 
       <div class="stepbody" data-step="smooth">
         <label class="ctl"><input type="checkbox" id="followDorsum"> Follow the dorsum</label>
-        <label class="ctl"><input type="checkbox" id="clean"> Clean (erode, keep largest piece, dilate)</label>
-        <div class="sub-ctrl">iterations <input type="range" id="cleanIters" min="1" max="3" step="1" value="1"> <span id="cleanItersV">1</span></div>
+        <label class="ctl"><input type="checkbox" id="clean"> Clean (drop specks)</label>
         <label class="ctl"><input type="checkbox" id="smooth"> Smooth</label>
         <div class="sub-ctrl">sigma <input type="range" id="sigma" min="0.4" max="2.5" step="0.1" value="0.8"> <span id="sigmaV">0.8</span></div>
       </div>
@@ -83,13 +83,21 @@
       </div>
 
       <div class="stepbody" data-step="decide">
+        <p id="flagNote" class="anchor"></p>
         <div class="row"><button id="include" class="primary">Include: save labels and go to next (S)</button></div>
-        <div class="row"><button id="touchUp">Touch up in ITK-SNAP</button><button id="exclude">Exclude</button></div>
+        <div class="row"><button id="editHere">Edit here (E)</button><button id="touchUp">Touch up in ITK-SNAP</button><button id="exclude">Exclude</button></div>
+        <div id="editPanel" hidden>
+          <div class="row tools"><button data-tool="nav">Navigate (N)</button><button data-tool="paint">Paint (P)</button><button data-tool="erase">Erase (X)</button><button data-tool="erode">Erode</button><button data-tool="dilate">Dilate</button></div>
+          <div class="sub-ctrl">muscle <select id="editLabel"><option value="1">1 vertical</option><option value="2">2 sup-long</option><option value="3">3 inf-long</option><option value="4">4 genioglossus</option></select>
+            brush <input type="range" id="brush" min="1" max="11" step="2" value="3"> <span id="brushV">3</span></div>
+          <div class="row"><button id="editUndo">Undo stroke (Z)</button></div>
+        </div>
         <div id="touchPanel" hidden>
           <label class="ctl">This BIDS folder's full path <input id="rootPath" placeholder="/path/to/bids"></label>
           <pre id="itkCmd" class="cmd"></pre>
-          <div class="row"><button id="copyCmd">Copy command</button><button id="reloadEdit">Reload edited labels</button><button id="undoTouch">Undo touch-up</button></div>
+          <div class="row"><button id="copyCmd">Copy command</button><button id="reloadEdit">Reload edited labels</button></div>
         </div>
+        <div class="row" id="frozenRow" hidden><button id="undoTouch">Undo hand edits</button></div>
         <div id="excludePanel" hidden>
           <select id="excludeReason">
             <option>MRI unusable</option><option>segmentation unusable</option><option>wrong or missing anatomy</option><option>other (see notes)</option>
@@ -102,7 +110,7 @@
     </div>
 
     <div class="card">
-      <h3>QC</h3>
+      <h3 id="qcTitle">QC</h3>
       <table class="qc">
         <tr><td>sup-long / tongue</td><td id="qcRatio">-</td><td class="norm">norm 0.31 (0.24-0.39)</td></tr>
         <tr><td>sup-long not-tissue</td><td id="qcSlNt">-</td><td class="norm">lower is better</td></tr>
@@ -110,6 +118,10 @@
         <tr><td>sup-long volume</td><td id="qcVol">-</td><td class="norm">mL</td></tr>
         <tr><td>left / right</td><td id="qcLR">-</td><td class="norm">mL</td></tr>
         <tr><td>asymmetry</td><td id="qcAsym">-</td><td class="norm">(L-R)/mean</td></tr>
+        <tr><td>sup-long cap</td><td id="qcCap">-</td><td class="norm">flag below 90%</td></tr>
+        <tr><td>inf-long L/R</td><td id="qcIl">-</td><td class="norm">flag below 0.5</td></tr>
+        <tr><td>genioglossus off midline</td><td id="qcGg">-</td><td class="norm">flag above 3 mm</td></tr>
+        <tr><td>prior removed</td><td id="qcPrior">-</td><td class="norm">flag above 8% (provisional)</td></tr>
       </table>
     </div>
     <textarea id="notes" rows="2" placeholder="Notes for this item"></textarea>
@@ -122,11 +134,12 @@
       <label><input type="checkbox" id="showMidline" checked> midline</label>
       <span class="legend"><i class="l1"></i>vertical <i class="l2"></i>sup-long <i class="l3"></i>inf-long <i class="l4"></i>genioglossus</span>
     </div>
-    <div id="nv"><canvas id="gl"></canvas></div>
+    <div id="nv"><canvas id="gl"></canvas><div id="brushCursor"></div></div>
   </section>
 </main>
 
 <footer><p>Keys: 1 to 5 rate, Enter next step, B before/after, A accept as is, S save, [ and ] previous and next.
+Editing: E opens the tools, N navigate, P paint, X erase, 1 to 4 choose the muscle, Z undo.
 Everything runs in your browser; files stay on this machine. Needs Chrome or Edge.</p></footer>
 
 <script type="module" src="js/app.js"></script>

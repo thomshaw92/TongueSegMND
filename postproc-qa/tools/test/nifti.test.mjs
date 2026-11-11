@@ -25,3 +25,7 @@ test('writeNiftiLabels -> readNifti round trip', () => {
   const bytes = writeNiftiLabels(lab.header, lab.dataC, lab.dims);
   same(readNifti(bytes.buffer), json('phantom_label.json'), 'round trip');
 });
+test('readNifti: qform-only affine (rotated, reflected) matches nibabel', () => {
+  const got = nii('phantom_qform.nii').affine, want = json('phantom_qform.json').affine;
+  want.forEach((r, i) => r.forEach((v, j) => assert.ok(Math.abs(got[i][j] - v) < 1e-5, `affine[${i}][${j}] ${got[i][j]} vs ${v}`)));
+});

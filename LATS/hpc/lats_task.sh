@@ -24,17 +24,27 @@ printf 'image: %s\n' "${imgs[@]}"
 echo "output: $out"
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+qa_labels() {
+  local id=$1 qd=$2 sub=${1%%_*}
+  if [ "$id" = "$sub" ]; then echo "$qd/$sub/anat/${sub}_space-sst_desc-qa_dseg.nii.gz"
+  else echo "$qd/$sub/${id#*_}/anat/${id}_space-sst_desc-qa_dseg.nii.gz"; fi
+}
+qa_included() { local j=${1%.nii.gz}.json; [ ! -f "$j" ] || { grep -q '"status": "done"' "$j" && grep -q '"decision": "include"' "$j"; }; }
+qa_applied() {
+  local j=${2%.nii.gz}.json
+  grep -q "\"sha256\": \"$(sha256 "$2")\"" "$1/qa_applied.json" 2>/dev/null || return 1
+  if [ -f "$j" ]; then grep -q "\"sidecar_sha256\": \"$(sha256 "$j")\"" "$1/qa_applied.json"
+  else grep -q '"sidecar_sha256": null' "$1/qa_applied.json"; fi
+}
 qa_args=() want=
 if [ -n "${LATS_QA_DIR:-}" ]; then
-  sub=${id%%_*}
-  if [ "$id" = "$sub" ]; then qa_file=$LATS_QA_DIR/$sub/${sub}_space-sst_desc-qa_dseg.nii.gz
-  else qa_file=$LATS_QA_DIR/$sub/${id#*_}/${id}_space-sst_desc-qa_dseg.nii.gz; fi
-  if [ ! -r "$qa_file" ]; then
-    echo "no QA labels for $id, nothing to do: $qa_file"
+  qa_file=$(qa_labels "$id" "$LATS_QA_DIR")
+  if [ ! -r "$qa_file" ] || ! qa_included "$qa_file"; then
+    echo "no included QA labels for $id, nothing to do: $qa_file"
     exit 0
   fi
-  want=$(sha256 "$qa_file")
-  if grep -q "\"sha256\": \"$want\"" "$out/qa_applied.json" 2>/dev/null && [ -s "$out/stats/volumes.csv" ]; then
+  want=$qa_file
+  if qa_applied "$out" "$qa_file" && [ -s "$out/stats/volumes.csv" ]; then
     echo "QA labels already applied: $qa_file"
     exit 0
   fi
@@ -67,7 +77,7 @@ rc=0
 "${cmd[@]}" || rc=$?
 echo "end: $(date '+%Y-%m-%d %H:%M:%S'), lats exit code $rc"
 applied=yes
-[ -z "$want" ] || grep -q "\"sha256\": \"$want\"" "$out/qa_applied.json" 2>/dev/null || applied=no
+[ -z "$want" ] || qa_applied "$out" "$want" || applied=no
 if [ "$rc" -ne 0 ] || [ ! -s "$out/stats/volumes.csv" ] || [ "$applied" = no ]; then
   echo "FAILED: $id (lats exit code $rc; stats/volumes.csv present: $([ -s "$out/stats/volumes.csv" ] && echo yes || echo no)${want:+; QA labels applied: $applied})" >&2
   exit 1

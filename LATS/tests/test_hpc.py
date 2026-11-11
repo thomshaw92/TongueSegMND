@@ -35,7 +35,9 @@ done
 if [ "$STUB_MODE" = ok ]; then
   mkdir -p "$out/stats"; echo x > "$out/stats/volumes.csv"
   if [ -n "${qa:-}" ]; then
-    printf '{"sha256": "%s"}\\n' "$( (sha256sum "$qa" 2>/dev/null || shasum -a 256 "$qa") | cut -d' ' -f1)" > "$out/qa_applied.json"
+    h() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | cut -d' ' -f1; }
+    j=${qa%.nii.gz}.json
+    printf '{"sha256": "%s", "sidecar_sha256": "%s"}\\n' "$(h "$qa")" "$(h "$j")" > "$out/qa_applied.json"
   fi
 fi
 """
@@ -184,13 +186,19 @@ def test_submit_and_task(bids, env, tmp_path):
 
 def test_qa_mode_lists_submits_and_reapplies(bids, env, tmp_path):
     qa = bids / "derivatives" / "lats-qa"
-    f = qa / "sub-01" / "sub-01_space-sst_desc-qa_dseg.nii.gz"
+    f = qa / "sub-01" / "anat" / "sub-01_space-sst_desc-qa_dseg.nii.gz"
+    side = f.with_name("sub-01_space-sst_desc-qa_dseg.json")
     f.parent.mkdir(parents=True)
     f.write_bytes(b"labels")
+    record = lambda status, decision: side.write_text(f'{{\n  "status": "{status}",\n  "decision": "{decision}"\n}}\n')
+    record("in progress", "null")
+    _run("lats_make_lists.sh", "-b", bids, "-o", "q0", "--qa", qa, env=env, cwd=tmp_path)
+    assert _rows(tmp_path / "q0/longitudinal.tsv") == [], "an unfinished record is not re-applied"
+    record("done", "include")
     _run("lats_make_lists.sh", "-b", bids, "-o", "q", "--qa", qa, env=env, cwd=tmp_path)
     assert [r[0] for r in _rows(tmp_path / "q/longitudinal.tsv")] == ["sub-01"]
     assert _rows(tmp_path / "q/cross-sectional.tsv") == []
-    assert "runs without QA labels left out: 2" in (tmp_path / "q/summary.txt").read_text()
+    assert "runs without included QA labels left out: 2" in (tmp_path / "q/summary.txt").read_text()
 
     sif = tmp_path / "lats.sif"
     sif.write_text("")
@@ -216,6 +224,14 @@ def test_qa_mode_lists_submits_and_reapplies(bids, env, tmp_path):
     _run("lats_make_lists.sh", "-b", bids, "-o", "q2", "--qa", qa, "--skip-done", env=env, cwd=tmp_path)
     assert _rows(tmp_path / "q2/longitudinal.tsv") == []
 
+    side.write_text(side.read_text() + "\n")
+    Path(env["STUB_LOG"]).unlink(missing_ok=True)
+    r = task()
+    assert "already applied" not in r.stdout and Path(env["STUB_LOG"]).exists(), "a changed record (e.g. the midline) is re-applied"
+    record("done", "exclude")
+    r = task()
+    assert "no included QA labels" in r.stdout
+    record("done", "include")
     f.write_bytes(b"labels, touched up again")
     r = task(STUB_MODE="fail")
     assert r.returncode == 1 and "QA labels applied: no" in r.stderr

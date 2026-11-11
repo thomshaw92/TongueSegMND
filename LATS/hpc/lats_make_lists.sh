@@ -124,9 +124,16 @@ excl() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$excl_tsv"; n_excl=$((n_excl + 
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 qa_labels() {
-  local id=$1 sub=${1%%_*}
-  if [ "$id" = "$sub" ]; then echo "$qa/$sub/${sub}_space-sst_desc-qa_dseg.nii.gz"
-  else echo "$qa/$sub/${id#*_}/${id}_space-sst_desc-qa_dseg.nii.gz"; fi
+  local id=$1 qd=$2 sub=${1%%_*}
+  if [ "$id" = "$sub" ]; then echo "$qd/$sub/anat/${sub}_space-sst_desc-qa_dseg.nii.gz"
+  else echo "$qd/$sub/${id#*_}/anat/${id}_space-sst_desc-qa_dseg.nii.gz"; fi
+}
+qa_included() { local j=${1%.nii.gz}.json; [ ! -f "$j" ] || { grep -q '"status": "done"' "$j" && grep -q '"decision": "include"' "$j"; }; }
+qa_applied() {
+  local j=${2%.nii.gz}.json
+  grep -q "\"sha256\": \"$(sha256 "$2")\"" "$1/qa_applied.json" 2>/dev/null || return 1
+  if [ -f "$j" ]; then grep -q "\"sidecar_sha256\": \"$(sha256 "$j")\"" "$1/qa_applied.json"
+  else grep -q '"sidecar_sha256": null' "$1/qa_applied.json"; fi
 }
 
 emit() {
@@ -134,12 +141,12 @@ emit() {
   shift 4
   if [ -n "$qa" ]; then
     local q
-    q=$(qa_labels "$id")
-    if [ ! -f "$q" ]; then
+    q=$(qa_labels "$id" "$qa")
+    if [ ! -f "$q" ] || ! qa_included "$q"; then
       n_noqa=$((n_noqa + 1))
       return 1
     fi
-    if [ "$skip_done" = 1 ] && grep -q "\"sha256\": \"$(sha256 "$q")\"" "$dir/qa_applied.json" 2>/dev/null; then
+    if [ "$skip_done" = 1 ] && qa_applied "$dir" "$q" && [ -s "$dir/stats/volumes.csv" ]; then
       n_done=$((n_done + 1))
       return 1
     fi
@@ -239,7 +246,7 @@ done
   echo "longitudinal runs: $n_long"
   for k in $(printf '%s\n' "${!per_n[@]}" | sort -n); do echo "  with $k sessions: ${per_n[$k]}"; done
   echo "cross-sectional runs (ses-$cross_ses, --cross $cross): $n_cross"
-  [ -z "$qa" ] || echo "QA mode: $qa; runs without QA labels left out: $n_noqa"
+  [ -z "$qa" ] || echo "QA mode: $qa; runs without included QA labels left out: $n_noqa"
   [ "$skip_done" = 0 ] || echo "already done, left out: $n_done"
   echo "excluded.tsv entries: $n_excl"
   echo "lists in: $(cd "$out" && pwd -P)"

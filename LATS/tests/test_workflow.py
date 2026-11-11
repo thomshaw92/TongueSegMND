@@ -130,29 +130,40 @@ def _finished_run(tmp_path, n_tp=2):
     import numpy as np
     cfg = _config(tmp_path, n_tp=n_tp)
     out = cfg.output_prefix
-    for rel in ["sst/T_template0.nii.gz", "stats/volumes.csv", "lats_run.json"] + [
+    for rel in ["sst/T_template0.nii.gz", "sst/midline.json", "stats/volumes.csv"] + [
             f"intermediate/reg/tp{i:02d}_{s}" for i in range(n_tp) for s in ("0GenericAffine.mat", "1Warp.nii.gz", "1InverseWarp.nii.gz")] + [
             f"intermediate/prep_crop/tp{i:02d}/native2template_0GenericAffine.mat" for i in range(n_tp)]:
         (out / rel).parent.mkdir(parents=True, exist_ok=True)
         (out / rel).write_bytes(b"x")
     nib.save(nib.Nifti1Image(np.zeros((4, 4, 4), np.float32), np.eye(4)), out / "sst/T_template0.nii.gz")
+    (out / "lats_run.json").write_text(json.dumps({"timepoints": [{"image": str(tp.image)} for tp in cfg.timepoints]}))
     return cfg
+
+
+def _qa_labels(tmp_path, record):
+    import nibabel as nib
+    import numpy as np
+    qa = tmp_path / "sub-01_space-sst_desc-qa_dseg.nii.gz"
+    nib.save(nib.Nifti1Image(np.ones((4, 4, 4), np.uint8), np.eye(4)), qa)
+    (tmp_path / "sub-01_space-sst_desc-qa_dseg.json").write_text(json.dumps(record))
+    return qa
 
 
 def test_reapply_reuses_the_run_and_keeps_its_outputs(tmp_path):
     import nibabel as nib
     import numpy as np
-    from lats.reapply import prepare_reapply
+    from lats.reapply import prepare_reapply, write_applied
     cfg = _finished_run(tmp_path)
-    qa = tmp_path / "sub-01_space-sst_desc-qa_dseg.nii.gz"
-    nib.save(nib.Nifti1Image(np.ones((4, 4, 4), np.uint8), np.eye(4)), qa)
-    (tmp_path / "sub-01_space-sst_desc-qa_dseg.json").write_text(json.dumps({"midline": {"point_mm": [1, 2, 3], "normal": [1, 0, 0]}}))
+    qa = _qa_labels(tmp_path, {"status": "done", "decision": "include", "midline": {"point_mm": [1, 2, 3], "normal": [1, 0, 0]}})
     cfg = dataclasses.replace(cfg, qa_labels=qa)
     prepare_reapply(cfg)
     out = cfg.output_prefix
     assert (out / "pre_qa/stats/volumes.csv").is_file() and (out / "pre_qa/lats_run.json").is_file()
-    assert not (out / "stats").exists()
-    assert json.loads((out / "qa_applied.json").read_text())["midline_from"].endswith("_dseg.json")
+    assert (out / "pre_qa/midline.json").is_file() and not (out / "sst/midline.json").exists()
+    assert not (out / "stats").exists() and not (out / "qa_applied.json").exists()
+    write_applied(cfg)
+    applied = json.loads((out / "qa_applied.json").read_text())
+    assert applied["midline_from"].endswith("_dseg.json") and len(applied["sidecar_sha256"]) == 64
     names = set(build_workflow(dataclasses.replace(cfg, shape=True)).list_node_names())
     assert "reuse" in names and "warp_labels" in names and "lateralise" in names
     assert not names & {"preprocess", "prep_crop", "sst", "segment_sst", "register"}
@@ -170,3 +181,34 @@ def test_reapply_rejects_labels_off_the_template_grid(tmp_path):
     (cfg.output_prefix / "intermediate/reg/tp01_1Warp.nii.gz").unlink()
     with pytest.raises(FileNotFoundError, match="tp01_1Warp"):
         prepare_reapply(dataclasses.replace(cfg, qa_labels=qa))
+
+
+def test_reapply_refuses_unfinished_records_and_other_sessions(tmp_path):
+    from lats.reapply import prepare_reapply
+    cfg = _finished_run(tmp_path)
+    for record in ({"status": "in progress", "decision": None}, {"status": "done", "decision": "exclude"}):
+        with pytest.raises(ValueError, match="not a finished include"):
+            prepare_reapply(dataclasses.replace(cfg, qa_labels=_qa_labels(tmp_path, record)))
+    qa = _qa_labels(tmp_path, {"status": "done", "decision": "include"})
+    swapped = dataclasses.replace(cfg, qa_labels=qa, timepoints=cfg.timepoints[::-1])
+    with pytest.raises(ValueError, match="sessions differ"):
+        prepare_reapply(swapped)
+    assert (cfg.output_prefix / "stats/volumes.csv").is_file(), "nothing moved before the checks pass"
+
+
+def test_reapply_after_a_crash_keeps_the_original_outputs(tmp_path):
+    from lats.reapply import prepare_reapply
+    cfg = _finished_run(tmp_path)
+    out = cfg.output_prefix
+    (out / "pre_qa").mkdir()
+    (out / "qa_applied.json").write_text("{}")
+    (out / "sst/midline.json").unlink()
+    prepare_reapply(dataclasses.replace(cfg, qa_labels=_qa_labels(tmp_path, {"status": "done", "decision": "include"})))
+    assert (out / "pre_qa/stats/volumes.csv").read_bytes() == b"x"
+    assert not (out / "qa_applied.json").exists()
+    for rel in ("stats/volumes.csv", "sst/midline.json"):
+        (out / rel).parent.mkdir(exist_ok=True)
+        (out / rel).write_text("from a re-apply")
+    prepare_reapply(dataclasses.replace(cfg, qa_labels=_qa_labels(tmp_path, {"status": "done", "decision": "include"})))
+    assert not (out / "stats").exists() and (out / "pre_qa/stats/volumes.csv").read_bytes() == b"x"
+    assert not (out / "sst/midline.json").exists() and not (out / "pre_qa/midline.json").exists(), "a re-apply's output is never kept as original"

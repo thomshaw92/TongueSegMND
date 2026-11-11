@@ -22,9 +22,16 @@ export function readNifti(buf) {
   for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
     dataC[(x * ny + y) * nz + z] = raw[f++] * sclSlope + sclInter;
   }
-  const affine = dv.getInt16(254, true) > 0
-    ? [0, 1, 2].map(r => [0, 1, 2, 3].map(c => gf(280 + 16 * r + 4 * c))).concat([[0, 0, 0, 1]])
-    : [[zooms[0], 0, 0, 0], [0, zooms[1], 0, 0], [0, 0, zooms[2], 0], [0, 0, 0, 1]];
+  let affine = [[zooms[0], 0, 0, 0], [0, zooms[1], 0, 0], [0, 0, zooms[2], 0], [0, 0, 0, 1]];
+  if (dv.getInt16(254, true) > 0) affine = [0, 1, 2].map(r => [0, 1, 2, 3].map(c => gf(280 + 16 * r + 4 * c))).concat([[0, 0, 0, 1]]);
+  else if (dv.getInt16(252, true) > 0) {           // qform: quaternion rotation, qfac from pixdim[0]
+    const [b, c, d] = [gf(256), gf(260), gf(264)], a = Math.sqrt(Math.max(0, 1 - b * b - c * c - d * d));
+    const R = [[a * a + b * b - c * c - d * d, 2 * (b * c - a * d), 2 * (b * d + a * c)],
+      [2 * (b * c + a * d), a * a + c * c - b * b - d * d, 2 * (c * d - a * b)],
+      [2 * (b * d - a * c), 2 * (c * d + a * b), a * a + d * d - c * c - b * b]];
+    const sc = [zooms[0], zooms[1], zooms[2] * (gf(76) < 0 ? -1 : 1)];
+    affine = R.map((row, r) => [...row.map((v, k) => v * sc[k]), gf(268 + 4 * r)]).concat([[0, 0, 0, 1]]);
+  }
   return { dims: [nx, ny, nz], zooms, affine, dataC, header: new Uint8Array(buf.slice(0, voxOffset)) };
 }
 

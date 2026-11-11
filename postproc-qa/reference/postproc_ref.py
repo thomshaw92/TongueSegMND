@@ -25,37 +25,13 @@ def erode6(mask):
     return out & m
 
 
-def dilate6(mask):
-    """6-connected binary dilation."""
-    m = mask
-    out = m.copy()
-    out[1:, :, :] |= m[:-1, :, :]; out[:-1, :, :] |= m[1:, :, :]
-    out[:, 1:, :] |= m[:, :-1, :]; out[:, :-1, :] |= m[:, 1:, :]
-    out[:, :, 1:] |= m[:, :, :-1]; out[:, :, :-1] |= m[:, :, 1:]
-    return out
-
-
-def erode_n(mask, n):
-    for _ in range(n):
-        mask = erode6(mask)
-    return mask
-
-
-def dilate_n(mask, n):
-    for _ in range(n):
-        mask = dilate6(mask)
-    return mask
-
-
-def largest_cc(mask):
-    """Largest 6-connected component of a boolean mask (BFS, deterministic)."""
+def major_cc(mask, frac=0.25, min_size=0):
+    """6-connected components at least ``frac`` of the largest one and ``min_size`` voxels (BFS, deterministic)."""
     from collections import deque
     seen = np.zeros(mask.shape, dtype=bool)
-    best = np.zeros(mask.shape, dtype=bool)
-    best_n = 0
+    comps = []
     nx, ny, nz = mask.shape
-    idx = np.argwhere(mask)
-    for sx, sy, sz in idx:
+    for sx, sy, sz in np.argwhere(mask):
         if seen[sx, sy, sz]:
             continue
         comp = []
@@ -68,12 +44,14 @@ def largest_cc(mask):
                 a, b, c = x+dx, y+dy, z+dz
                 if 0 <= a < nx and 0 <= b < ny and 0 <= c < nz and mask[a,b,c] and not seen[a,b,c]:
                     seen[a,b,c] = True; q.append((a,b,c))
-        if len(comp) > best_n:
-            best_n = len(comp)
-            best = np.zeros(mask.shape, dtype=bool)
+        comps.append(comp)
+    out = np.zeros(mask.shape, dtype=bool)
+    keep = max(frac * max((len(c) for c in comps), default=0), min_size)
+    for comp in comps:
+        if len(comp) >= keep:
             for x, y, z in comp:
-                best[x, y, z] = True
-    return best
+                out[x, y, z] = True
+    return out
 
 
 def edt(mask, zooms):
@@ -114,7 +92,7 @@ def _dt_axis(f, axis, sp2):
     return np.moveaxis(flat.reshape(shape), -1, axis)
 
 
-def fill_nearest(labels, holes):
+def fill_nearest(labels, holes, ban=0):
     """Fill ``holes`` by iterative majority dilation of neighbouring labels (ties -> lowest id)."""
     out = labels.copy()
     todo = holes & (out == 0)
@@ -128,7 +106,7 @@ def fill_nearest(labels, holes):
                 a, b, c = x+dx, y+dy, z+dz
                 if 0 <= a < nx and 0 <= b < ny and 0 <= c < nz:
                     lv = out[a, b, c]
-                    if lv > 0:
+                    if lv > 0 and lv != ban:
                         counts[lv] = counts.get(lv, 0) + 1
             if counts:
                 best = max(sorted(counts), key=lambda k: counts[k])
@@ -159,7 +137,7 @@ def thin_suplong(labels, zooms, keep_frac=0.88):
     t = float(np.quantile(depth[sl], keep_frac))
     reassign = sl & (depth > t)
     out[reassign] = 0
-    return fill_nearest(out, reassign)
+    return fill_nearest(fill_nearest(out, reassign, ban=SUPLONG), reassign)
 
 
 def suplong_inferior_clip(labels):
@@ -172,7 +150,62 @@ def suplong_inferior_clip(labels):
     zz = np.broadcast_to(np.arange(out.shape[2]), out.shape)
     below = (out == SUPLONG) & (zz < zmin)
     out[below] = 0
-    return fill_nearest(out, below)
+    return fill_nearest(fill_nearest(out, below, ban=SUPLONG), below)
+
+
+def _close2d(m, r):
+    p = np.pad(m, r, constant_values=False)
+    d = np.zeros_like(m)
+    for i in range(2 * r + 1):
+        for j in range(2 * r + 1):
+            d |= p[i:i + m.shape[0], j:j + m.shape[1]]
+    p = np.pad(d, r, constant_values=True)
+    e = np.ones_like(m)
+    for i in range(2 * r + 1):
+        for j in range(2 * r + 1):
+            e &= p[i:i + m.shape[0], j:j + m.shape[1]]
+    return e
+
+
+def _fill_holes2d(m):
+    from collections import deque
+    nx, ny = m.shape
+    outside = np.zeros_like(m)
+    q = deque((x, y) for x in range(nx) for y in range(ny) if (x in (0, nx - 1) or y in (0, ny - 1)) and not m[x, y])
+    for x, y in q:
+        outside[x, y] = True
+    while q:
+        x, y = q.popleft()
+        for a, b in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= a < nx and 0 <= b < ny and not m[a, b] and not outside[a, b]:
+                outside[a, b] = True; q.append((a, b))
+    return ~outside
+
+
+def sl_cap(labels, r=3):
+    """Superior longitudinal as a continuous dorsal cap: where vertical tops a column inside the cap's footprint, its top voxels become superior longitudinal at the cap's median thickness."""
+    nz = labels.shape[2]
+    fg = labels > 0
+    has = fg.any(axis=2)
+    top = nz - 1 - np.argmax(fg[:, :, ::-1], axis=2)
+    tl = np.where(has, np.take_along_axis(labels, top[..., None], 2)[..., 0], 0)
+    cap = tl == SUPLONG
+    out = labels.copy()
+    if not cap.any():
+        return out
+    runs = []
+    for x, y in zip(*np.nonzero(cap)):
+        z, n = top[x, y], 0
+        while z >= 0 and labels[x, y, z] == SUPLONG:
+            n += 1; z -= 1
+        runs.append(n)
+    t = sorted(runs)[(len(runs) - 1) // 2]
+    foot = _close2d(cap, r) | _fill_holes2d(cap)
+    for x, y in zip(*np.nonzero(foot & (tl == VERTICAL))):
+        for z in range(max(top[x, y] - t + 1, 0), top[x, y] + 1):
+            if out[x, y, z] == VERTICAL:
+                out[x, y, z] = SUPLONG
+    return out
 
 
 def surface_trim(labels, image, lo, hi, iters=6, which=LABELS):
@@ -191,17 +224,14 @@ def surface_trim(labels, image, lo, hi, iters=6, which=LABELS):
     return out
 
 
-def clean_labels(labels, iters=1):
-    """Per-label erode -> largest connected component -> dilate, then refill holes."""
+def clean_labels(labels, zooms):
+    """Drop pieces under a quarter of each muscle's largest (inferior longitudinal: under 50 mm3), then refill; no erosion."""
     out = np.zeros_like(labels)
+    il_min = int(np.ceil(50.0 / float(np.prod(zooms))))
     for k in LABELS:
         m = labels == k
-        if m.sum() == 0:
-            continue
-        e = erode_n(m, iters)
-        e = largest_cc(e)
-        d = dilate_n(e, iters) & m
-        out[d] = k
+        if m.any():
+            out[major_cc(m, 0, il_min) if k == INFLONG else major_cc(m, 0.25)] = k
     holes = (labels > 0) & (out == 0)
     if holes.any():
         out = fill_nearest(out, holes)
@@ -268,15 +298,17 @@ def run_pipeline(labels, image, zooms, steps):
         out = thin_suplong(out, zooms, steps.get("keep_frac", 0.88))
     if steps.get("inferior_clip"):
         out = suplong_inferior_clip(out)
+    if steps.get("sl_cap"):
+        out = sl_cap(out)
     pre = out.copy()
     if steps.get("surface_trim"):
         lo, hi = tissue_band(image, out, steps.get("trim_k", 1.5))
         which = LABELS if steps.get("trim_all", True) else (SUPLONG,)
         out = surface_trim(out, image, lo, hi, which=which)
-    if steps.get("clean"):
-        out = clean_labels(out, steps.get("clean_iters", 1))
     if steps.get("follow_dorsum"):
         out = follow_dorsum(pre, out)
+    if steps.get("clean"):
+        out = clean_labels(out, zooms)
     if steps.get("smooth"):
         out = smooth_labels(out, steps.get("sigma", 0.8))
     return out

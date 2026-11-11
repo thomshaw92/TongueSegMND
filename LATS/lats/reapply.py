@@ -15,7 +15,9 @@ from .config import LatsConfig
 from .utils.paths import (intermediate_dir, jacobian_dir, labels_dir, lateral_labels_dir, manifest_path, qc_dir,
                           reg_dir, shape_dir, sst_dir, stats_dir)
 
-DERIVED = (stats_dir, labels_dir, lateral_labels_dir, jacobian_dir, shape_dir, qc_dir)
+DERIVED = (stats_dir, labels_dir, lateral_labels_dir, jacobian_dir, shape_dir, qc_dir,
+           lambda out: sst_dir(out) / "midline.json", lambda out: sst_dir(out) / "sst_seg_lateralised.nii.gz",
+           manifest_path)                      # last: pre_qa/lats_run.json marks the original outputs as fully moved
 
 
 def reuse_files(config: LatsConfig) -> dict:
@@ -43,6 +45,10 @@ def qa_midline(config: LatsConfig) -> str:
     return str(side) if m.get("point_mm") and m.get("normal") else ""
 
 
+def _sha256(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
 def prepare_reapply(config: LatsConfig) -> None:
     files = reuse_files(config)
     paths = [p for v in files.values() for p in (v if isinstance(v, list) else [v]) if p != ""]
@@ -52,19 +58,38 @@ def prepare_reapply(config: LatsConfig) -> None:
     tpl, qa = nib.load(files["template"]), nib.load(config.qa_labels)
     if tpl.shape[:3] != qa.shape[:3] or not np.allclose(tpl.affine, qa.affine, atol=1e-3):
         raise ValueError(f"{config.qa_labels.name} is not on this run's template grid")
+    side = qa_sidecar(config)
+    if side.is_file():
+        r = json.loads(side.read_text())
+        if (r.get("status"), r.get("decision")) != ("done", "include"):
+            raise ValueError(f"{side.name} is not a finished include (status {r.get('status')}, decision {r.get('decision')})")
     out = config.output_prefix
     pre = out / "pre_qa"
-    if not pre.exists():
-        pre.mkdir()
-        for p in [f(out) for f in DERIVED] + [manifest_path(out)]:
-            if p.exists():
-                shutil.move(str(p), str(pre / p.name))
-    else:
-        for f in DERIVED:
-            shutil.rmtree(f(out), ignore_errors=True)
-    (out / "qa_applied.json").write_text(json.dumps({
+    run = pre / "lats_run.json" if (pre / "lats_run.json").is_file() else manifest_path(out)
+    if not run.is_file():
+        raise FileNotFoundError(f"--qa-labels needs the run's {run.name} in -o")
+    before = [Path(t["image"]).name for t in json.loads(run.read_text())["timepoints"]]
+    now = [Path(tp.image).name for tp in config.timepoints]
+    if before != now:
+        raise ValueError(f"the sessions differ from the original run: {before} vs {now}")
+    (out / "qa_applied.json").unlink(missing_ok=True)
+    first = not (pre / "lats_run.json").is_file()
+    pre.mkdir(exist_ok=True)
+    for p in (f(out) for f in DERIVED):
+        if not p.exists():
+            continue
+        if first and not (pre / p.name).exists():
+            shutil.move(str(p), str(pre / p.name))
+        else:
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+
+
+def write_applied(config: LatsConfig) -> None:
+    side = qa_sidecar(config)
+    (config.output_prefix / "qa_applied.json").write_text(json.dumps({
         "qa_labels": str(config.qa_labels),
-        "sha256": hashlib.sha256(config.qa_labels.read_bytes()).hexdigest(),
+        "sha256": _sha256(config.qa_labels),
+        "sidecar_sha256": _sha256(side) if side.is_file() else None,
         "midline_from": qa_midline(config) or None,
     }, indent=2) + "\n")
 

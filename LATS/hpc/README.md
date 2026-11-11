@@ -22,10 +22,10 @@ Outputs go to `BIDS/derivatives/lats/longitudinal/sub-X/` and
 `lats_make_lists.sh --skip-done` lists only those.
 
 After QA with the postproc-qa app, which writes `BIDS/derivatives/lats-qa/`, re-apply the corrected
-template labels to the runs that have them, reusing each run's template and registrations:
+template labels of the runs marked include, reusing each run's template and registrations:
 ```bash
 ./lats_make_lists.sh -b /path/to/bids -o qa_lists --qa /path/to/bids/derivatives/lats-qa
 ./lats_submit.sh -l qa_lists/longitudinal.tsv -i lats-tongue.sif --qa /path/to/bids/derivatives/lats-qa
 ```
 and the same for `qa_lists/cross-sectional.tsv`. Each run keeps its earlier outputs in `pre_qa/` and
-records the applied labels in `qa_applied.json`; a run is redone only when its QA labels change.
+records the applied labels in `qa_applied.json`; a run is redone only when its QA labels or QA record change.

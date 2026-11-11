@@ -48,11 +48,22 @@ import nibabel as nib
 aff = np.diag(list(ZOOMS) + [1.0])
 nib.save(nib.Nifti1Image(L.astype(np.uint8), aff), os.path.join(OUT, "phantom_label.nii"))
 nib.save(nib.Nifti1Image(img.astype(np.float32), aff), os.path.join(OUT, "phantom_image.nii"))
+# qform only, rotated and reflected (qfac -1), to test the reader's quaternion affine
+q = nib.Nifti1Image(L.astype(np.uint8), None)
+qa = np.array([[0, 0, -1.2, 40.0], [1.0, 0, 0, 12.5], [0, 0.8, 0, -7.0], [0, 0, 0, 1]])
+q.set_qform(qa, code=1); q.set_sform(None, code=0)
+nib.save(q, os.path.join(OUT, "phantom_qform.nii"))
+json.dump({"affine": q.get_qform().tolist()}, open(os.path.join(OUT, "phantom_qform.json"), "w"))
 
 # primitives
 dump("erode6", R.erode6(L > 0).astype(np.int32))
-dump("dilate6", R.dilate6(L > 0).astype(np.int32))
-dump("largest_cc", R.largest_cc(L == R.SUPLONG).astype(np.int32))
+dump("major_cc", R.major_cc(L == R.SUPLONG).astype(np.int32))
+P = np.zeros((NX, NY, NZ), dtype=np.int32)
+P[3:9, 5:12, 6:12] = 1
+P[13:18, 5:12, 6:12] = 1
+P[2:3, 20:21, 2:4] = 1
+dump("pair_mask", P)
+dump("major_cc_pair", R.major_cc(P > 0).astype(np.int32))
 dump("edt", R.edt(L > 0, ZOOMS))
 
 # operations
@@ -61,14 +72,22 @@ json.dump({"lo": lo, "hi": hi}, open(os.path.join(OUT, "tissue_band.json"), "w")
 dump("thin", R.thin_suplong(L, ZOOMS, 0.88))
 dump("inferior_clip", R.suplong_inferior_clip(L))
 dump("surface_trim", R.surface_trim(L, img, lo, hi))
-dump("clean", R.clean_labels(L, 1))
+dump("clean", R.clean_labels(L, ZOOMS))
 dump("smooth", R.smooth_labels(L, 0.8))
 post = L.copy()
 post[:, :, int(cz) + 6:] = 0
 dump("follow_post", post)
 dump("follow_dorsum", R.follow_dorsum(L, post))
+C = np.zeros((NX, NY, NZ), dtype=np.int32)
+C[3:19, 4:22, 4:17] = R.VERTICAL
+C[4:19, 4:22, 14:17] = R.SUPLONG
+C[4:19, 20:22, 12:17] = R.SUPLONG              # a thicker edge: the cap uses the median thickness
+C[4:19, 11:13, 14:17] = R.VERTICAL
+C[8:10, 16:18, 14:17] = R.VERTICAL
+dump("cap_label", C)
+dump("sl_cap", R.sl_cap(C))
 dump("pipeline_gentle", R.run_pipeline(L, img, ZOOMS, {
-    "thin": True, "inferior_clip": True, "surface_trim": True,
+    "thin": True, "inferior_clip": True, "sl_cap": True, "surface_trim": True, "trim_all": False,
     "clean": True, "follow_dorsum": True, "smooth": True}))
 
 # midline: an elongated, rotated tongue-like ellipsoid with an off-centre genioglossus core

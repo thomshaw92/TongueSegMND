@@ -2,7 +2,7 @@
 // Volumes are flat typed arrays in C order: idx = (x*ny + y)*nz + z.
 // Labels: 0 bg, 1 vertical, 2 superior-long, 3 inferior-long, 4 genioglossus.
 
-export const SUPLONG = 2, VERTICAL = 1, GENIO = 4;
+export const SUPLONG = 2, VERTICAL = 1, INFLONG = 3, GENIO = 4;
 export const LABELS = [1, 2, 3, 4];
 export const CORE = [1, 3, 4];
 
@@ -21,41 +21,28 @@ export function erode6(m, dims) {
   return out;
 }
 
-export function dilate6(m, dims) {
-  const [nx, ny, nz] = dims, sx = ny * nz, sy = nz, out = new Uint8Array(m.length);
-  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {
-    const i = idx(x, y, z, ny, nz);
-    out[i] = (m[i] || (x > 0 && m[i - sx]) || (x < nx - 1 && m[i + sx]) ||
-      (y > 0 && m[i - sy]) || (y < ny - 1 && m[i + sy]) ||
-      (z > 0 && m[i - 1]) || (z < nz - 1 && m[i + 1])) ? 1 : 0;
-  }
-  return out;
-}
-
-const erodeN = (m, dims, n) => { for (let i = 0; i < n; i++) m = erode6(m, dims); return m; };
-const dilateN = (m, dims, n) => { for (let i = 0; i < n; i++) m = dilate6(m, dims); return m; };
-
-export function largestCC(mask, dims) {
+export function majorCC(mask, dims, frac = 0.25, minSize = 0) {
   const [nx, ny, nz] = dims, sx = ny * nz, sy = nz, N = mask.length;
-  const seen = new Uint8Array(N), best = new Uint8Array(N);
-  const q = new Int32Array(N);
-  let bestN = 0;
+  const seen = new Uint8Array(N), q = new Int32Array(N), comps = [];
+  let big = 0;
   for (let start = 0; start < N; start++) {
     if (!mask[start] || seen[start]) continue;
-    let head = 0, tail = 0, n = 0; q[tail++] = start; seen[start] = 1;
-    const comp = [];
+    let head = 0, tail = 0; q[tail++] = start; seen[start] = 1;
     while (head < tail) {
-      const i = q[head++]; comp.push(i); n++;
+      const i = q[head++];
       const z = i % nz, rem = (i - z) / nz, y = rem % ny, x = (rem - y) / ny;
       const nb = [];
       if (x > 0) nb.push(i - sx); if (x < nx - 1) nb.push(i + sx);
       if (y > 0) nb.push(i - sy); if (y < ny - 1) nb.push(i + sy);
       if (z > 0) nb.push(i - 1); if (z < nz - 1) nb.push(i + 1);
-      for (const j of nb) if (mask[j] && !seen[j]) { seen[j] = 1; q[tail++] = j; }
+      for (const k of nb) if (mask[k] && !seen[k]) { seen[k] = 1; q[tail++] = k; }
     }
-    if (n > bestN) { bestN = n; best.fill(0); for (const i of comp) best[i] = 1; }
+    comps.push(q.slice(0, tail));
+    big = Math.max(big, tail);
   }
-  return best;
+  const out = new Uint8Array(N), keep = Math.max(frac * big, minSize);
+  for (const c of comps) if (c.length >= keep) for (const i of c) out[i] = 1;
+  return out;
 }
 
 export function edt(mask, dims, zooms) {
@@ -100,7 +87,7 @@ function dtAxis(f, dims, axis, sp2) {
   }
 }
 
-export function fillNearest(labels, holes, dims) {
+export function fillNearest(labels, holes, dims, ban = 0) {
   const [nx, ny, nz] = dims, sx = ny * nz, sy = nz;
   const out = Int32Array.from(labels);
   const todo = Uint8Array.from(holes);
@@ -115,7 +102,7 @@ export function fillNearest(labels, holes, dims) {
       if (x > 0) nb.push(i - sx); if (x < nx - 1) nb.push(i + sx);
       if (y > 0) nb.push(i - sy); if (y < ny - 1) nb.push(i + sy);
       if (z > 0) nb.push(i - 1); if (z < nz - 1) nb.push(i + 1);
-      for (const j of nb) { const lv = out[j]; if (lv > 0) counts.set(lv, (counts.get(lv) || 0) + 1); }
+      for (const j of nb) { const lv = out[j]; if (lv > 0 && lv !== ban) counts.set(lv, (counts.get(lv) || 0) + 1); }
       if (counts.size) {
         let best = -1, bc = -1;
         for (const k of [...counts.keys()].sort((a, b) => a - b)) if (counts.get(k) > bc) { bc = counts.get(k); best = k; }
@@ -151,7 +138,7 @@ export function thinSuplong(labels, dims, zooms, keepFrac = 0.88) {
   const t = quantile(sld, keepFrac);
   const re = new Uint8Array(out.length);
   for (let i = 0; i < out.length; i++) if (out[i] === SUPLONG && depth[i] > t) { re[i] = 1; out[i] = 0; }
-  return fillNearest(out, re, dims);
+  return fillNearest(fillNearest(out, re, dims, SUPLONG), re, dims);
 }
 
 export function suplongInferiorClip(labels, dims) {
@@ -162,7 +149,64 @@ export function suplongInferiorClip(labels, dims) {
   if (!isFinite(zmin)) return out;
   const below = new Uint8Array(out.length);
   for (let i = 0; i < out.length; i++) { const z = i % nz; if (out[i] === SUPLONG && z < zmin) { below[i] = 1; out[i] = 0; } }
-  return fillNearest(out, below, dims);
+  return fillNearest(fillNearest(out, below, dims, SUPLONG), below, dims);
+}
+
+function close2d(m, nx, ny, r) {
+  const d = new Uint8Array(nx * ny), e = new Uint8Array(nx * ny);
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) {
+    let v = 0;
+    for (let a = Math.max(0, x - r); a <= Math.min(nx - 1, x + r) && !v; a++)
+      for (let b = Math.max(0, y - r); b <= Math.min(ny - 1, y + r); b++) if (m[a * ny + b]) { v = 1; break; }
+    d[x * ny + y] = v;
+  }
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) {
+    let v = 1;
+    for (let a = Math.max(0, x - r); a <= Math.min(nx - 1, x + r) && v; a++)
+      for (let b = Math.max(0, y - r); b <= Math.min(ny - 1, y + r); b++) if (!d[a * ny + b]) { v = 0; break; }
+    e[x * ny + y] = v;
+  }
+  return e;
+}
+
+function fillHoles2d(m, nx, ny) {
+  const outside = new Uint8Array(nx * ny), q = [];
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++)
+    if ((x === 0 || x === nx - 1 || y === 0 || y === ny - 1) && !m[x * ny + y]) { outside[x * ny + y] = 1; q.push(x * ny + y); }
+  for (let h = 0; h < q.length; h++) {
+    const x = Math.floor(q[h] / ny), y = q[h] % ny;
+    for (const [a, b] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      const k = a * ny + b;
+      if (a >= 0 && a < nx && b >= 0 && b < ny && !m[k] && !outside[k]) { outside[k] = 1; q.push(k); }
+    }
+  }
+  return Uint8Array.from(outside, v => 1 - v);
+}
+
+export function slCap(labels, dims, r = 3) {
+  const [nx, ny, nz] = dims, out = Int32Array.from(labels);
+  const top = new Int32Array(nx * ny).fill(-1), tl = new Int32Array(nx * ny), cap = new Uint8Array(nx * ny);
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) {
+    const b = (x * ny + y) * nz;
+    for (let z = nz - 1; z >= 0; z--) if (labels[b + z] > 0) { top[x * ny + y] = z; tl[x * ny + y] = labels[b + z]; break; }
+    cap[x * ny + y] = tl[x * ny + y] === SUPLONG ? 1 : 0;
+  }
+  const runs = [];
+  for (let c = 0; c < nx * ny; c++) {
+    if (!cap[c]) continue;
+    let z = top[c], n = 0;
+    while (z >= 0 && labels[c * nz + z] === SUPLONG) { n++; z--; }
+    runs.push(n);
+  }
+  if (!runs.length) return out;
+  runs.sort((a, b) => a - b);
+  const t = runs[Math.floor((runs.length - 1) / 2)];
+  const closed = close2d(cap, nx, ny, r), filled = fillHoles2d(cap, nx, ny);
+  for (let c = 0; c < nx * ny; c++) {
+    if (!(closed[c] || filled[c]) || tl[c] !== VERTICAL) continue;
+    for (let z = Math.max(top[c] - t + 1, 0); z <= top[c]; z++) if (out[c * nz + z] === VERTICAL) out[c * nz + z] = SUPLONG;
+  }
+  return out;
 }
 
 export function surfaceTrim(labels, image, dims, lo, hi, iters = 6, which = LABELS) {
@@ -183,17 +227,16 @@ export function surfaceTrim(labels, image, dims, lo, hi, iters = 6, which = LABE
   return out;
 }
 
-export function cleanLabels(labels, dims, iters = 1) {
-  const out = new Int32Array(labels.length);
+// Drops pieces under a quarter of each muscle's largest (inferior longitudinal: under 50 mm3), then refills; no erosion.
+export function cleanLabels(labels, dims, zooms) {
+  const out = new Int32Array(labels.length), ilMin = Math.ceil(50 / (zooms[0] * zooms[1] * zooms[2]));
   for (const k of LABELS) {
     const m = new Uint8Array(labels.length);
     let any = false;
     for (let i = 0; i < labels.length; i++) if (labels[i] === k) { m[i] = 1; any = true; }
     if (!any) continue;
-    let e = erodeN(m, dims, iters);
-    e = largestCC(e, dims);
-    const d = dilateN(e, dims, iters);
-    for (let i = 0; i < labels.length; i++) if (d[i] && m[i]) out[i] = k;
+    const d = k === INFLONG ? majorCC(m, dims, 0, ilMin) : majorCC(m, dims, 0.25);
+    for (let i = 0; i < labels.length; i++) if (d[i]) out[i] = k;
   }
   const holes = new Uint8Array(labels.length);
   let anyHole = false;
@@ -278,14 +321,15 @@ export function runPipeline(labels, image, dims, zooms, steps) {
   let out = Int32Array.from(labels);
   if (steps.thin) out = thinSuplong(out, dims, zooms, steps.keepFrac ?? 0.88);
   if (steps.inferiorClip) out = suplongInferiorClip(out, dims);
+  if (steps.slCap) out = slCap(out, dims);
   const pre = Int32Array.from(out);
   if (steps.surfaceTrim) {
     const [lo, hi] = tissueBand(image, out, steps.trimK ?? 1.5);
     const which = (steps.trimAll ?? true) ? LABELS : [SUPLONG];
     out = surfaceTrim(out, image, dims, lo, hi, 6, which);
   }
-  if (steps.clean) out = cleanLabels(out, dims, steps.cleanIters ?? 1);
   if (steps.followDorsum) out = followDorsum(pre, out, dims);
+  if (steps.clean) out = cleanLabels(out, dims, zooms);
   if (steps.smooth) out = smoothLabels(out, dims, steps.sigma ?? 0.8);
   return out;
 }
@@ -342,6 +386,7 @@ export function midlinePlane(labels, dims, affine, mode = 'gg') {
     return n ? s.map(x => x / n) : null;
   };
   const point = mean(v => v === GENIO) || mean(v => v > 0);
+  if (!point) return null;
   let normal = [1, 0, 0];
   if (mode === 'tilt') {
     const c = mean(v => v > 0), m = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; let n = 0;
@@ -383,3 +428,57 @@ export function planeMask(labels, dims, affine, { point, normal }, halfMm, pad =
       }
   return out;
 }
+
+export function shapeChecks(labels, dims, affine, plane = null) {
+  const [nx, ny, nz] = dims;
+  let cols = 0, capCols = 0;
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) {
+    const b = (x * ny + y) * nz;
+    for (let z = nz - 1; z >= 0; z--) if (labels[b + z] > 0) { cols++; if (labels[b + z] === SUPLONG) capCols++; break; }
+  }
+  const ggRef = !!plane;
+  if (!plane) {
+    const c = [0, 0, 0]; let n = 0;
+    forEachVoxel(labels, dims, v => v > 0, (i, j, k) => { world(affine, i, j, k).forEach((w, d) => { c[d] += w; }); n++; });
+    plane = { point: c.map(v => v / Math.max(n, 1)), normal: [1, 0, 0] };
+  }
+  const { point: p, normal: m } = plane;
+  let left = 0, right = 0, gg = 0, ng = 0;
+  forEachVoxel(labels, dims, v => v === INFLONG || v === GENIO, (i, j, k, v) => {
+    const w = world(affine, i, j, k), d = (w[0] - p[0]) * m[0] + (w[1] - p[1]) * m[1] + (w[2] - p[2]) * m[2];
+    if (v === INFLONG) { if (d > 0) right++; else left++; } else { gg += d; ng++; }
+  });
+  return { capPct: cols ? 100 * capCols / cols : 0, ilLeft: left, ilRight: right,
+    ilRatio: Math.min(left, right) / Math.max(left, right, 1), ggOffsetMm: ggRef && ng ? gg / ng : null };
+}
+
+export const SHAPE_FLAGS = { capPct: (v) => v < 90, ilRatio: (v) => v < 0.5, ggOffsetMm: (v) => v !== null && Math.abs(v) > 3 };
+
+// Processing assumes RAS voxel order; rasOrder finds the voxel axis nearest each world axis, toRas/fromRas copy in and out.
+export function rasOrder(dims, zooms, affine) {
+  const near = [0, 1, 2].map(a => { const c = [0, 1, 2].map(w => Math.abs(affine[w][a])); return c.indexOf(Math.max(...c)); });
+  if (new Set(near).size !== 3) throw new Error('voxel axes are too oblique to tell up from left-right');
+  const src = [0, 1, 2].map(w => near.indexOf(w)), flip = src.map((a, w) => affine[w][a] < 0);
+  const st = [dims[1] * dims[2], dims[2], 1];
+  const A = affine.map(r => r.slice());
+  for (let r = 0; r < 3; r++) {
+    A[r][3] = affine[r][3] + src.reduce((s, a, w) => s + (flip[w] ? affine[r][a] * (dims[a] - 1) : 0), 0);
+    for (let w = 0; w < 3; w++) A[r][w] = affine[r][src[w]] * (flip[w] ? -1 : 1);
+  }
+  return { dims: src.map(a => dims[a]), zooms: src.map(a => zooms[a]), affine: A,
+    identity: src.every((a, w) => a === w) && !flip.some(Boolean),
+    stride: src.map((a, w) => st[a] * (flip[w] ? -1 : 1)),
+    base: src.reduce((s, a, w) => s + (flip[w] ? (dims[a] - 1) * st[a] : 0), 0) };
+}
+
+function rasCopy(arr, o, into) {
+  if (o.identity) return arr;
+  const [nx, ny, nz] = o.dims, [sx, sy, sz] = o.stride, out = new arr.constructor(arr.length);
+  let n = 0;
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0, q = o.base + i * sx + j * sy; k < nz; k++, q += sz) {
+    if (into) out[n++] = arr[q]; else out[q] = arr[n++];
+  }
+  return out;
+}
+export const toRas = (arr, o) => rasCopy(arr, o, true);
+export const fromRas = (arr, o) => rasCopy(arr, o, false);

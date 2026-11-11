@@ -20,7 +20,13 @@ export const SCALES = {
 
 export const TSV_COLUMNS = ['pass', 'item', 'sub', 'ses', 'status', 'decision', 'exclude_reason',
   'mri_quality', 'mri_disposition', 'seg_quality_raw', 'seg_quality_final', 'seg_disposition',
-  'touched_up', 'asymmetry_pct', 'midline_mode', 'labels', 'rater', 'updated', 'notes'];
+  'touched_up', 'asymmetry_pct', 'midline_mode', 'cap_coverage_pct', 'il_side_ratio', 'gg_offset_mm', 'shape_flags',
+  'prior_removed_pct', 'labels', 'rater', 'updated', 'notes'];
+
+// Share of the network's tongue the atlas prior removed (LATS sst/prior_refine.json); the threshold is provisional.
+export const PRIOR_FLAG_PCT = 8;
+export const priorRemovedPct = (j) => (j && j.dl_foreground_voxels > 0
+  ? 100 * (j.dl_foreground_voxels - j.refined_foreground_voxels) / j.dl_foreground_voxels : null);
 
 const entities = (name) => name.replace(/\.nii(\.gz)?$/, '').split('_');
 
@@ -49,12 +55,15 @@ export async function discover(list, readJson) {
       const seg = ['sst_seg_refined.nii.gz', 'sst_seg.nii.gz'].find(n => sst.includes(n));
       if (!sst.includes('T_template0.nii.gz') || !seg) continue;
       const [sub, ses] = run.split('_');
-      const qaFolder = [...QA_DIR, sub, ...(ses ? [ses] : [])];
-      const labels = templateLabelsName(sub, ses);
-      items.push({ pass: 'template', id: run, sub, ses: ses || null, image: [...base, 'sst', 'T_template0.nii.gz'],
-        labelsIn: [...base, 'sst', seg], midline: sst.includes('midline.json') ? [...base, 'sst', 'midline.json'] : null,
+      const qaFolder = [...QA_DIR, sub, ...(ses ? [ses] : []), 'anat'];
+      const pre = (await list([...base, 'pre_qa'])).map(e => e.name);
+      const labels = templateLabelsName(sub, ses), prior = sst.includes('prior_refine.json') ? [...base, 'sst', 'prior_refine.json'] : null;
+      items.push({ pass: 'template', id: run, sub, ses: ses || null, image: [...base, 'sst', 'T_template0.nii.gz'], prior,
+        labelsIn: [...base, 'sst', seg],
+        midline: pre.includes('midline.json') ? [...base, 'pre_qa', 'midline.json'] : sst.includes('midline.json') ? [...base, 'sst', 'midline.json'] : null,
         qaFolder, labels, sidecar: sidecarName(labels) });
       const runInfo = await readJson([...base, 'lats_run.json']);
+      const applied = (await list(base)).some(e => e.name === 'qa_applied.json');
       for (const tp of (runInfo && runInfo.timepoints) || []) {
         const imageName = String(tp.image).split('/').pop();
         const tses = sesOf(imageName);
@@ -62,8 +71,8 @@ export async function discover(list, readJson) {
         const single = kind === 'cross-sectional';
         const sLabels = labelsName(imageName, single ? 'qasingle' : 'qa');
         items.push({ pass: 'session', id: `${sub}_${tses}${single ? '_single' : ''}`, sub, ses: tses, image: [sub, tses, 'anat', imageName],
-          labelsIn: [...base, 'labels', `tp${String(tp.index).padStart(2, '0')}.nii.gz`], midline: null,
-          qaFolder: [...QA_DIR, sub, tses], labels: sLabels, sidecar: sidecarName(sLabels) });
+          labelsIn: [...base, 'labels', `tp${String(tp.index).padStart(2, '0')}.nii.gz`], midline: null, prior,
+          qaFolder: [...QA_DIR, sub, tses, 'anat'], labels: sLabels, sidecar: sidecarName(sLabels), applied });
       }
     }
   }
@@ -90,7 +99,7 @@ export function tsvRow(r) {
   const v = { ...r, mri_disposition: disposition('mri', r.mri_quality),
     seg_disposition: disposition('seg', r.seg_quality_final || r.seg_quality_raw),
     midline_mode: r.midline ? r.midline.mode : '' };
-  return TSV_COLUMNS.map(c => (v[c] === null || v[c] === undefined ? '' : String(v[c]).replace(/[\t\n\r]+/g, ' '))).join('\t');
+  return TSV_COLUMNS.map(c => (v[c] === null || v[c] === undefined || v[c] === '' ? 'n/a' : String(v[c]).replace(/[\t\n\r]+/g, ' '))).join('\t');
 }
 
 export const toTsv = (records) => [TSV_COLUMNS.join('\t'), ...records.map(tsvRow)].join('\n') + '\n';

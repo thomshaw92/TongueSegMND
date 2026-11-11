@@ -271,16 +271,6 @@ def main(argv: list[str] | None = None) -> int:
     for w in warnings:
         print(f"warning: {w}", file=sys.stderr)
 
-    if config.qa_labels:
-        from .reapply import prepare_reapply
-        try:
-            prepare_reapply(config)
-        except (OSError, ValueError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-    config.output_prefix.mkdir(parents=True, exist_ok=True)
-    _write_manifest(config)
-
     wf = build_workflow(config)
 
     if args.dry_run:
@@ -292,6 +282,16 @@ def main(argv: list[str] | None = None) -> int:
               f"-t {config.template_transform} -m {config.template_metric}")
         return 0
 
+    if config.qa_labels:
+        from .reapply import prepare_reapply
+        try:
+            prepare_reapply(config)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    config.output_prefix.mkdir(parents=True, exist_ok=True)
+    _write_manifest(config)
+
     plugin_args = {"n_procs": config.n_procs} if config.plugin == "MultiProc" else None
     os.environ.setdefault("ANTS_RANDOM_SEED", "1")
     os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(config.n_procs)
@@ -302,6 +302,9 @@ def main(argv: list[str] | None = None) -> int:
         LOG.error("workflow failed: %s", exc)
         _print_recent_crashes(config)
         return 1
+    if config.qa_labels:
+        from .reapply import write_applied
+        write_applied(config)
 
     if not config.keep_tmp:
         import shutil

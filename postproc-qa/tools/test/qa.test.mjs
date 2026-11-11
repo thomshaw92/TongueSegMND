@@ -4,7 +4,9 @@ import * as Q from '../../web/js/qa.js';
 
 const tree = {
   'derivatives/lats/longitudinal': ['sub-01/', 'sub-02/', 'notes.txt'],
-  'derivatives/lats/longitudinal/sub-01/sst': ['T_template0.nii.gz', 'sst_seg.nii.gz', 'sst_seg_refined.nii.gz', 'midline.json'],
+  'derivatives/lats/longitudinal/sub-01/sst': ['T_template0.nii.gz', 'sst_seg.nii.gz', 'sst_seg_refined.nii.gz', 'midline.json', 'prior_refine.json'],
+  'derivatives/lats/longitudinal/sub-01/pre_qa': ['midline.json'],
+  'derivatives/lats/cross-sectional/sub-03_ses-01': ['sst/', 'qa_applied.json'],
   'derivatives/lats/longitudinal/sub-02/sst': ['sst_seg.nii.gz'],
   'derivatives/lats/cross-sectional': ['sub-03_ses-01/'],
   'derivatives/lats/cross-sectional/sub-03_ses-01/sst': ['T_template0.nii.gz', 'sst_seg.nii.gz'],
@@ -30,13 +32,19 @@ test('discover finds templates and sessions, skips incomplete runs', async () =>
     ['template:sub-01', 'session:sub-01_ses-01', 'session:sub-01_ses-2', 'template:sub-03_ses-01', 'session:sub-03_ses-01_single']);
   const t = items[0];
   assert.strictEqual(t.labelsIn.at(-1), 'sst_seg_refined.nii.gz');
-  assert.deepStrictEqual(t.midline, ['derivatives', 'lats', 'longitudinal', 'sub-01', 'sst', 'midline.json']);
-  assert.deepStrictEqual(t.qaFolder, ['derivatives', 'lats-qa', 'sub-01']);
+  assert.deepStrictEqual(t.midline, ['derivatives', 'lats', 'longitudinal', 'sub-01', 'pre_qa', 'midline.json'], 'the original LATS plane, not a re-applied one');
+  assert.deepStrictEqual(t.qaFolder, ['derivatives', 'lats-qa', 'sub-01', 'anat']);
   const s = items[2];
   assert.deepStrictEqual(s.image, ['sub-01', 'ses-2', 'anat', 'sub-01_ses-2_T1w.nii.gz']);
   assert.strictEqual(s.labelsIn.at(-1), 'tp01.nii.gz');
   assert.strictEqual(s.labels, 'sub-01_ses-2_desc-qa_dseg.nii.gz');
-  assert.deepStrictEqual(items[3].qaFolder, ['derivatives', 'lats-qa', 'sub-03', 'ses-01']);
+  assert.deepStrictEqual(items[3].qaFolder, ['derivatives', 'lats-qa', 'sub-03', 'ses-01', 'anat']);
+  assert.deepStrictEqual([s.applied, items[4].applied], [false, true]);
+  assert.deepStrictEqual(t.prior, ['derivatives', 'lats', 'longitudinal', 'sub-01', 'sst', 'prior_refine.json']);
+  assert.deepStrictEqual(s.prior, t.prior, 'sessions carry their run\'s prior record');
+  assert.strictEqual(items[3].prior, null);
+  assert.strictEqual(Q.priorRemovedPct({ dl_foreground_voxels: 1000, refined_foreground_voxels: 900 }), 10);
+  assert.strictEqual(Q.priorRemovedPct(null), null);
   assert.strictEqual(items[4].labels, 'sub-03_ses-01_desc-qasingle_dseg.nii.gz');
 });
 
@@ -49,6 +57,8 @@ test('records, tsv and resume', async () => {
   assert.strictEqual(lines[0].split('\t').length, Q.TSV_COLUMNS.length);
   const row = Object.fromEntries(Q.TSV_COLUMNS.map((c, i) => [c, lines[1].split('\t')[i]]));
   assert.strictEqual(row.mri_disposition, 'Pass'); assert.strictEqual(row.seg_disposition, 'Pass'); assert.strictEqual(row.notes, 'tab here');
+  assert.strictEqual(row.exclude_reason, 'n/a');
+  assert.ok(Q.TSV_COLUMNS.includes('prior_removed_pct'));
   const recs = { 'template:sub-01': r };
   assert.strictEqual(Q.nextToDo(items, recs), 1);
   assert.strictEqual(Q.nextToDo(items, recs, 4), 1);
