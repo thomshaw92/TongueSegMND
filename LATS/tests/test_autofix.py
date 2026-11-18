@@ -228,9 +228,7 @@ def test_side_shave_takes_the_outer_side_of_vertical_and_superior_longitudinal_o
 
 def test_autofix_equals_the_qa_app_reference():
     """LATS autofix and the QA app's Python twin give the same labels at the default settings."""
-    ref = Path(__file__).resolve().parents[2] / "postproc-qa" / "reference"
-    if not ref.is_dir():
-        pytest.skip("postproc-qa is not alongside LATS")
+    ref = Path(__file__).resolve().parents[1] / "postproc-qa" / "reference"
     sys.path.insert(0, str(ref))
     import postproc_ref as R
     steps = {"inferior_clip": True, "sl_cap": True, "sl_trim": 2, "il_trim": 3, "trim_sd": 2.0, "follow_dorsum": True,
