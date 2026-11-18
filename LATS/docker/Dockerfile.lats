@@ -9,7 +9,7 @@
 #
 # Run (LATS_PIPELINE and LATS_ATLAS_DIR are set, so no --pipeline or --atlas-dir):
 #   apptainer run lats-tongue.sif -o out/ \
-#       --n4 --denoise --prior-refine \
+#       --n4 --prior-refine \
 #       sub-01_ses-01_T1w.nii.gz sub-01_ses-02_T1w.nii.gz
 
 # ANTs CLI (prebuilt)

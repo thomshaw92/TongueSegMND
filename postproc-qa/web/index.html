@@ -14,7 +14,7 @@
   <button id="reopenFolder" hidden></button>
   <label>Initials <input id="rater" size="5" maxlength="8" autocomplete="off"></label>
   <span id="folderName" class="muted"></span>
-  <span class="switch"><button id="passTemplate" class="on">Templates</button><button id="passSession">Sessions</button></span>
+  <span class="switch"><button id="passTemplate" class="on">1. Templates</button><button id="passSession">2. Sessions</button></span>
   <span id="progress" class="muted"></span>
 </header>
 
@@ -24,6 +24,7 @@
   <span id="itemStatus" class="chip"></span>
   <button id="nextItem" title="Next ( ] )">Next</button>
   <button id="nextTodo">Next to do</button>
+  <span id="spin" class="spin" hidden></span>
   <span id="status" class="status">Open the BIDS folder that holds derivatives/lats.</span>
 </nav>
 
@@ -31,38 +32,57 @@
   <section class="panel controls">
     <ol id="stepper" class="stepper"></ol>
 
-    <div class="card">
+    <div id="doneCard" class="card" hidden><h2>All done</h2><p id="doneText"></p>
+      <div class="row"><button id="doneBack" class="primary bigbtn"></button><button id="goSessions" class="bigbtn" hidden>Go to Sessions</button></div></div>
+
+    <div id="stepCard" class="card">
       <div class="cardhead"><h2 id="stepTitle">Start</h2><button id="infoBtn" class="info" title="More information">i</button></div>
       <p id="stepWhat" class="what">Open the BIDS folder, enter your initials, then work through the steps.</p>
       <div id="stepInfo" class="infobox" hidden></div>
 
-      <div class="stepbody" data-step="mri">
-        <div class="grades" data-scale="mri"></div>
-        <p class="anchor" data-anchor="mri"></p>
-        <div class="row"><button class="toExclude">Exclude (scan unusable)</button></div>
-      </div>
-
-      <div class="stepbody" data-step="raw">
-        <div class="grades" data-scale="seg_raw"></div>
-        <p class="anchor" data-anchor="seg_raw"></p>
-        <div class="row"><button id="acceptRaw">Accept as is (A)</button><button class="toExclude">Exclude</button></div>
+      <div class="stepbody" data-step="scans">
+        <div id="scanList"></div>
+        <p id="scanAnchor" class="anchor"></p>
+        <div class="row"><button class="toExclude">Exclude (template unusable)</button></div>
       </div>
 
       <div class="stepbody" data-step="surface">
-        <label class="ctl"><input type="checkbox" id="thin"> Thin superior longitudinal</label>
+        <div class="ctlrow"><b>Move the segmentation</b><button class="info small" data-info="move">i</button></div>
+        <div class="sub-ctrl">right (+) or left (-) <input type="range" id="mvX" min="-5" max="5" step="1" value="0"> <span id="mvXV">0</span> mm</div>
+        <div class="sub-ctrl">forward (+) or back (-) <input type="range" id="mvY" min="-5" max="5" step="1" value="0"> <span id="mvYV">0</span> mm</div>
+        <div class="sub-ctrl">up (+) or down (-) <input type="range" id="mvZ" min="-5" max="5" step="1" value="0"> <span id="mvZV">0</span> mm</div>
+        <div class="dials">
+          <div class="dial" data-for="mvPitch" data-sign="-1"><svg viewBox="-40 -40 80 80"><circle r="34"></circle><g><line y1="-34" y2="34"></line><circle class="knob" cy="-34" r="6"></circle></g></svg>
+            <div>pitch, sagittal: <span id="mvPitchV">0</span> deg</div></div>
+          <div class="dial" data-for="mvYaw" data-sign="-1"><svg viewBox="-40 -40 80 80"><circle r="34"></circle><g><line y1="-34" y2="34"></line><circle class="knob" cy="-34" r="6"></circle></g></svg>
+            <div>yaw, axial: <span id="mvYawV">0</span> deg</div></div>
+          <div class="dial" data-for="mvRoll"><svg viewBox="-40 -40 80 80"><circle r="34"></circle><g><line y1="-34" y2="34"></line><circle class="knob" cy="-34" r="6"></circle></g></svg>
+            <div>roll, coronal: <span id="mvRollV">0</span> deg</div></div>
+        </div>
+        <input type="range" id="mvPitch" min="-10" max="10" step="1" value="0" hidden>
+        <input type="range" id="mvYaw" min="-10" max="10" step="1" value="0" hidden>
+        <input type="range" id="mvRoll" min="-10" max="10" step="1" value="0" hidden>
+        <div class="row"><button id="mvReset">Reset move</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="thin"> Thin superior longitudinal</label><button class="info small" data-info="thin">i</button></div>
         <div class="sub-ctrl">keep <input type="range" id="keepFrac" min="0.6" max="1" step="0.01" value="0.88"> <span id="keepFracV">0.88</span></div>
-        <label class="ctl"><input type="checkbox" id="inferiorClip"> Clip superior longitudinal below vertical</label>
-        <label class="ctl"><input type="checkbox" id="slCap"> Keep superior longitudinal as a continuous cap</label>
-        <label class="ctl"><input type="checkbox" id="surfaceTrim"> Trim surface voxels outside the tissue band</label>
-        <div class="sub-ctrl">k <input type="range" id="trimK" min="0.8" max="3" step="0.1" value="1.5"> <span id="trimKV">1.5</span>
-          <label class="inline"><input type="checkbox" id="trimAll"> all muscles</label></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="inferiorClip"> Clip superior longitudinal below vertical</label><button class="info small" data-info="clip">i</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="slCap"> Keep superior longitudinal as a continuous cap</label><button class="info small" data-info="cap">i</button></div>
+        <div class="sub-ctrl">trim superior longitudinal, layers <input type="range" id="slTrim" min="0" max="6" step="1" value="2"> <span id="slTrimV">2</span><button class="info small" data-info="trims">i</button></div>
+        <div class="sub-ctrl">trim inferior longitudinal, layers <input type="range" id="ilTrim" min="0" max="6" step="1" value="3"> <span id="ilTrimV">3</span></div>
+        <div class="sub-ctrl">band, robust SD <input type="range" id="trimSd" min="1" max="3" step="0.25" value="2"> <span id="trimSdV">2</span></div>
+        <div class="sub-ctrl">dark cut, robust SD (0 off) <input type="range" id="darkSd" min="0" max="5" step="0.5" value="3"> <span id="darkSdV">3</span><button class="info small" data-info="dark">i</button></div>
+        <div class="sub-ctrl">confidence cut (0 off) <input type="range" id="probCut" min="0" max="0.99" step="0.01" value="0.99"> <span id="probCutV">0.99</span><button class="info small" data-info="prob">i</button></div>
       </div>
 
       <div class="stepbody" data-step="smooth">
-        <label class="ctl"><input type="checkbox" id="followDorsum"> Follow the dorsum</label>
-        <label class="ctl"><input type="checkbox" id="clean"> Clean (drop specks)</label>
-        <label class="ctl"><input type="checkbox" id="smooth"> Smooth</label>
-        <div class="sub-ctrl">sigma <input type="range" id="sigma" min="0.4" max="2.5" step="0.1" value="0.8"> <span id="sigmaV">0.8</span></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="followDorsum"> Follow the dorsum</label><button class="info small" data-info="follow">i</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="order"> No inferior longitudinal above superior longitudinal</label><button class="info small" data-info="order">i</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="genio"> Genioglossus rules (not at the side or top, not far forward)</label><button class="info small" data-info="genio">i</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="shave"> Shave side (outer voxel of vertical and superior longitudinal)</label><button class="info small" data-info="shave">i</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="clean"> Clean (drop specks, keep one tongue)</label><button class="info small" data-info="clean">i</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="mirror"> Mirror cut (vertical with no mirror partner; one-sided errors only)</label><button class="info small" data-info="mirror">i</button></div>
+        <div class="ctlrow"><label class="ctl"><input type="checkbox" id="smooth"> Smooth</label><button class="info small" data-info="smooth">i</button></div>
+        <div class="sub-ctrl">sigma, mm <input type="range" id="sigma" min="0.5" max="2" step="0.25" value="1"> <span id="sigmaV">1</span></div>
       </div>
 
       <div class="stepbody" data-step="midline">
@@ -72,24 +92,28 @@
           <option value="tilt">tilted to tongue shape</option>
         </select></div>
         <div class="sub-ctrl">shift <input type="range" id="mlShift" min="-10" max="10" step="0.5" value="0"> <span id="mlShiftV">0</span> mm</div>
-        <div class="sub-ctrl">yaw <input type="range" id="mlYaw" min="-20" max="20" step="1" value="0"> <span id="mlYawV">0</span> deg</div>
-        <div class="sub-ctrl">roll <input type="range" id="mlRoll" min="-20" max="20" step="1" value="0"> <span id="mlRollV">0</span> deg</div>
+        <div class="dials">
+          <div class="dial" data-for="mlYaw" data-sign="-1"><svg viewBox="-40 -40 80 80"><circle r="34"></circle><g><line y1="-34" y2="34"></line><circle class="knob" cy="-34" r="6"></circle></g></svg>
+            <div>yaw, axial view: <span id="mlYawV">0</span> deg</div></div>
+          <div class="dial" data-for="mlRoll"><svg viewBox="-40 -40 80 80"><circle r="34"></circle><g><line y1="-34" y2="34"></line><circle class="knob" cy="-34" r="6"></circle></g></svg>
+            <div>roll, coronal view: <span id="mlRollV">0</span> deg</div></div>
+          <button class="info small" data-info="midline">i</button>
+        </div>
+        <input type="range" id="mlYaw" min="-20" max="20" step="1" value="0" hidden>
+        <input type="range" id="mlRoll" min="-20" max="20" step="1" value="0" hidden>
         <div class="row"><button id="mlReset">Reset midline</button></div>
       </div>
 
-      <div class="stepbody" data-step="final">
-        <div class="grades" data-scale="seg_final"></div>
-        <p class="anchor" data-anchor="seg_final"></p>
-      </div>
-
       <div class="stepbody" data-step="decide">
+        <div class="grades"><button data-g="1">1</button><button data-g="2">2</button><button data-g="3">3</button><button data-g="4">4</button><button data-g="5">5</button></div>
+        <p class="anchor" data-anchor="seg_final"></p>
         <p id="flagNote" class="anchor"></p>
         <div class="row"><button id="include" class="primary">Include: save labels and go to next (S)</button></div>
-        <div class="row"><button id="editHere">Edit here (E)</button><button id="touchUp">Touch up in ITK-SNAP</button><button id="exclude">Exclude</button></div>
+        <div class="row"><button id="editHere">Edit here (E)</button><button id="keepLargest">Keep largest piece</button><button id="touchUp">Touch up in ITK-SNAP</button><button id="exclude">Exclude</button></div>
         <div id="editPanel" hidden>
-          <div class="row tools"><button data-tool="nav">Navigate (N)</button><button data-tool="paint">Paint (P)</button><button data-tool="erase">Erase (X)</button><button data-tool="erode">Erode</button><button data-tool="dilate">Dilate</button></div>
-          <div class="sub-ctrl">muscle <select id="editLabel"><option value="1">1 vertical</option><option value="2">2 sup-long</option><option value="3">3 inf-long</option><option value="4">4 genioglossus</option></select>
-            brush <input type="range" id="brush" min="1" max="11" step="2" value="3"> <span id="brushV">3</span></div>
+          <div class="row tools"><button data-tool="nav">Navigate (N)</button><button data-tool="paint">Paint (P)</button><button data-tool="erase">Erase (X)</button><button data-tool="erode">Erode</button><button data-tool="dilate">Dilate</button><button class="info small" data-info="tools">i</button></div>
+          <div class="row muscles" id="muscles"><button data-k="1" style="--c:230,38,38">1 vertical</button><button data-k="2" style="--c:38,204,64">2 sup-long</button><button data-k="3" style="--c:51,115,242">3 inf-long</button><button data-k="4" style="--c:250,204,26">4 genioglossus</button></div>
+          <div class="sub-ctrl">brush <input type="range" id="brush" class="big" min="1" max="11" step="2" value="3"> <span id="brushV">3</span> voxels</div>
           <div class="row"><button id="editUndo">Undo stroke (Z)</button></div>
         </div>
         <div id="touchPanel" hidden>
@@ -110,7 +134,7 @@
     </div>
 
     <div class="card">
-      <h3 id="qcTitle">QC</h3>
+      <div class="cardhead"><h3 id="qcTitle">QC</h3><button class="info small" data-info="qc">i</button></div>
       <table class="qc">
         <tr><td>sup-long / tongue</td><td id="qcRatio">-</td><td class="norm">norm 0.31 (0.24-0.39)</td></tr>
         <tr><td>sup-long not-tissue</td><td id="qcSlNt">-</td><td class="norm">lower is better</td></tr>
@@ -129,17 +153,20 @@
 
   <section class="panel viewer">
     <div class="viewbar">
-      <label><input type="checkbox" id="showCorrected" checked> corrected (B)</label>
-      <label>opacity <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.6"></label>
-      <label><input type="checkbox" id="showMidline" checked> midline</label>
+      <button id="toggleSeg" class="primary bigbtn">Segmentation: on (H)</button>
+      <label id="afterFixes"><input type="checkbox" id="showCorrected" checked> after fixes (B)</label>
+      <label>opacity <input type="range" id="opacity" class="big" min="0" max="1" step="0.05" value="0.6"></label>
+      <label id="midlineToggle"><input type="checkbox" id="showMidline" checked> midline</label>
+      <button class="info small" data-info="view">i</button>
       <span class="legend"><i class="l1"></i>vertical <i class="l2"></i>sup-long <i class="l3"></i>inf-long <i class="l4"></i>genioglossus</span>
     </div>
-    <div id="nv"><canvas id="gl"></canvas><div id="brushCursor"></div></div>
+    <div id="nv"><canvas id="gl"></canvas><div id="brushCursor"></div><div id="sliceBtns"></div></div>
   </section>
 </main>
 
-<footer><p>Keys: 1 to 5 rate, Enter next step, B before/after, A accept as is, S save, [ and ] previous and next.
-Editing: E opens the tools, N navigate, P paint, X erase, 1 to 4 choose the muscle, Z undo.
+<footer><p>Keys: 1 to 5 rate, Enter next step, H segmentation on/off, B before/after the fixes, S save, [ and ] previous and next,
++ and - one slice in the view under the mouse.
+Editing: E opens the tools, N navigate, P paint, X erase, 1 to 4 choose the muscle, Z, Cmd+Z or Ctrl+Z undo.
 Everything runs in your browser; files stay on this machine. Needs Chrome or Edge.</p></footer>
 
 <script type="module" src="js/app.js"></script>

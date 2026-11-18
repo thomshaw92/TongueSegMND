@@ -27,5 +27,7 @@ template labels of the runs marked include, reusing each run's template and regi
 ./lats_make_lists.sh -b /path/to/bids -o qa_lists --qa /path/to/bids/derivatives/lats-qa
 ./lats_submit.sh -l qa_lists/longitudinal.tsv -i lats-tongue.sif --qa /path/to/bids/derivatives/lats-qa
 ```
-and the same for `qa_lists/cross-sectional.tsv`. Each run keeps its earlier outputs in `pre_qa/` and
-records the applied labels in `qa_applied.json`; a run is redone only when its QA labels or QA record change.
+and the same for `qa_lists/cross-sectional.tsv`. Each run keeps its original outputs in `pre_qa/` (a later
+re-apply replaces the previous re-apply's outputs) and records the applied labels in `qa_applied.json`; a run is redone
+only when its QA labels or QA record change. A run whose re-apply failed is redone by submitting again with `--qa`; a
+submit without `--qa` refuses a folder that has been through QA.

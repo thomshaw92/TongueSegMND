@@ -43,7 +43,7 @@ class LatsConfig:
 
     # tongue-local crop + QC enhancement
     crop_n4: bool = True
-    crop_denoise: bool = True
+    crop_denoise: bool = False
     isotropic_mm: float = 1.0        # resample crop + QC image to this iso mm (0 = off)
     qc_preproc: bool = True          # build the re-preprocessed native QC image
 
@@ -68,6 +68,13 @@ class LatsConfig:
 
     # atlas-prior refinement (FreeSurfer-aseg style)
     prior_refine: bool = False       # opt-in: refine the SST seg with the atlas
+    autofix: bool = True
+    sl_trim_layers: int = 2
+    il_trim_layers: int = 3
+    trim_sd: float = 2.0
+    prob_cut: float = 0.99           # drop template tongue below this tongue probability; 0 is off
+    dark_sd: float = 3.0             # remove thick dark tongue below median - this many robust SD; 0 is off
+    side_shave: bool = True          # outermost side voxel of vertical and superior longitudinal removed
     atlas_dir: Path | None = None    # dir with atlas_foreground + atlas_prob_{1..4}
     atlas_reg_transform: str = "s"   # antsRegistrationSyN -t for atlas->tongue
     atlas_reg_downsample_mm: float = 1.0

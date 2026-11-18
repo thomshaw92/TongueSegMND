@@ -16,6 +16,8 @@ const lab = load('phantom_label');
 const dims = lab.dims;
 const L = Int32Array.from(lab.data);
 const img = Float32Array.from(load('phantom_image').data);
+const CUTS = { inferiorClip: true, slTrim: 2, ilTrim: 3, trimSd: 2, followDorsum: true, order: true, darkSd: 3, probCut: 0.99, smooth: true, sigma: 1, genio: true, shave: true, clean: true };
+const GENTLE = { thin: true, inferiorClip: true, slCap: true, slTrim: 2, ilTrim: 3, trimSd: 2, followDorsum: true, order: true, smooth: true, sigma: 1, genio: true, clean: true };
 const u8 = (a) => Uint8Array.from(a.map(v => v ? 1 : 0));
 
 const eqInt = (a, golden, name) => {
@@ -63,13 +65,47 @@ test('followDorsum', () => {
   const post = Int32Array.from(load('follow_post').data);
   eqInt(P.followDorsum(L, post, dims), load('follow_dorsum'), 'follow_dorsum');
 });
-test('smoothLabels', () => eqInt(P.smoothLabels(L, dims, 0.8), load('smooth'), 'smooth'));
-test('runPipeline gentle (full)', () => {
-  const out = P.runPipeline(L, img, dims, zooms, {
-    thin: true, inferiorClip: true, slCap: true, surfaceTrim: true, trimAll: false, clean: true, followDorsum: true, smooth: true,
-  });
-  eqInt(out, load('pipeline_gentle'), 'pipeline_gentle');
+test('smoothLabels', () => eqInt(P.smoothLabels(L, dims, zooms, 1.0), load('smooth'), 'smooth'));
+
+test('muscleBand and orderInflong match the reference', () => {
+  const g = JSON.parse(readFileSync(join(G, 'muscle_band.json'), 'utf8'));
+  for (const k of [2, 3]) P.muscleBand(img, L, dims, k, 2).forEach((v, j) => assert.ok(Math.abs(v - g[k][j]) < 1e-6 * Math.max(1, Math.abs(v))));
+  eqInt(P.orderInflong(Int32Array.from(load('order_label').data), dims), load('order_inflong'), 'order_inflong');
+  eqInt(P.genioRules(Int32Array.from(load('genio_label').data), dims, zooms), load('genio_rules'), 'genio_rules');
+  const gf = load('genio_front_label');
+  eqInt(P.genioRules(Int32Array.from(gf.data), gf.dims, zooms), load('genio_front'), 'genio_front');
+  const I2 = Float32Array.from(load('il_image').data), t = P.surfaceTrim(L, I2, dims, ...P.muscleBand(I2, L, dims, 3, 2), 3, [3]);
+  eqInt(t, load('il_trim'), 'il_trim');
+  assert.ok(t.filter(v => v === 3).length < L.filter(v => v === 3).length, 'the trim removed inferior longitudinal surface');
 });
+test('darkCut and the confidence cut match the reference', () => {
+  const dl = load('dark_label');
+  eqInt(P.darkCut(Int32Array.from(dl.data), Float64Array.from(load('dark_image').data), dl.dims, 3), load('dark_cut'), 'dark_cut');
+  eqInt(P.shaveSide(L, dims), load('shave_side'), 'shave_side');
+  eqInt(P.runPipeline(L, img, dims, zooms, CUTS, Float64Array.from(load('tongue_prob').data)), load('pipeline_cuts'), 'pipeline_cuts');
+});
+test('the move matches the reference, and the pipeline with it', () => {
+  const tp = Float64Array.from(load('tongue_prob').data), deg = [3, -4, 2], mm = [1, -2, 1];
+  const [m, mp] = P.moveVolumes([L, tp], dims, zooms, P.moveRotation(deg), mm, P.tongueCentre(L, dims, zooms));
+  eqInt(m, load('move_label'), 'move_label');
+  assert.deepStrictEqual(Array.from(mp), load('move_prob').data, 'the confidence map moves with the labels');
+  assert.ok(load('move_label').data.some((v, i) => v !== L[i]), 'the move changes the labels');
+  eqInt(P.runPipeline(L, img, dims, zooms, { ...CUTS, mvX: 1, mvY: -2, mvZ: 1, mvPitch: 3, mvYaw: -4, mvRoll: 2 }, tp), load('pipeline_move'), 'pipeline_move');
+  const [, ny, nz] = dims, up = P.moveVolumes([L], dims, zooms, P.moveRotation([0, 0, 0]), [0, 0, zooms[2]], [0, 0, 0])[0];
+  assert.ok(Array.from(up).every((v, q) => v === (q % nz === 0 ? 0 : L[q - 1])), 'up is +z, one voxel');
+  const one = new Int32Array(9 ** 3), at = (x, y, z) => (x * 9 + y) * 9 + z;
+  one[at(6, 4, 4)] = 1;
+  const yaw = P.moveVolumes([one], [9, 9, 9], [1, 1, 1], P.moveRotation([0, 90, 0]), [0, 0, 0], [4, 4, 4])[0];
+  assert.deepStrictEqual([yaw[at(4, 6, 4)], yaw.reduce((a, b) => a + b)], [1, 1], 'yaw +90: right turns to forward');
+});
+test('mirror cut and the pipeline with it match the reference', () => {
+  const g = load('mirror_plane'), ml = load('mirror_label'), M = Int32Array.from(ml.data), tp = Float64Array.from(load('mirror_prob').data);
+  eqInt(P.mirrorCut(M, ml.dims, zooms, g.affine, g, tp), load('mirror_cut'), 'mirror_cut');
+  eqInt(P.runPipeline(M, img, ml.dims, zooms, { shave: true, clean: true, mirror: true }, tp, g), load('pipeline_mirror'), 'pipeline_mirror');
+  const off = P.runPipeline(M, img, ml.dims, zooms, { shave: true, clean: true, mirror: false }, tp, g);
+  assert.ok(off.filter(v => v === 1).length > load('pipeline_mirror').data.filter(v => v === 1).length, 'off by default: nothing cut');
+});
+test('runPipeline gentle (full)', () => eqInt(P.runPipeline(L, img, dims, zooms, GENTLE), load('pipeline_gentle'), 'pipeline_gentle'));
 
 test('midline planes, adjustment and left/right counts', () => {
   const g = load('midline'), ml = load('midline_label'), M = Int32Array.from(ml.data);
@@ -138,6 +174,16 @@ test('clean keeps a 2-voxel-thick genioglossus side and drops specks', () => {
   assert.strictEqual(out.filter((w) => w > 0).length, V.filter((w) => w > 0).length, 'no tissue lost');
 });
 
+test('clean removes a blob outside the tongue and gives an inner speck to its neighbour', () => {
+  const dims = [16, 16, 16], [, ny, nz] = dims, V = new Int32Array(16 ** 3), at = (x, y, z) => (x * ny + y) * nz + z;
+  for (let x = 2; x < 14; x++) for (let y = 2; y < 14; y++) for (let z = 2; z < 10; z++) V[at(x, y, z)] = x < 7 ? 4 : 1;
+  for (let x = 9; x < 11; x++) for (let y = 7; y < 9; y++) for (let z = 10; z < 13; z++) V[at(x, y, z)] = 4;
+  V[at(12, 10, 5)] = 4;
+  const out = P.cleanLabels(V, dims, [1, 1, 1]);
+  assert.strictEqual([9, 10].flatMap(x => [7, 8].flatMap(y => [10, 11, 12].map(z => out[at(x, y, z)]))).filter(v => v).length, 0);
+  assert.strictEqual(out[at(12, 10, 5)], 1);
+});
+
 test('rasOrder: a permuted and flipped copy processes like the original', () => {
   const [nx, ny, nz] = dims, D = [nz, nx, ny], Q = new Int32Array(L.length), I = new Float32Array(img.length);
   for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {   // new axes: -z, x, -y
@@ -150,8 +196,7 @@ test('rasOrder: a permuted and flipped copy processes like the original', () => 
   o.affine.forEach((r, k) => r.forEach((v, c) => assert.ok(Math.abs(v - (k === c ? (k < 3 ? zooms[k] : 1) : 0)) < 1e-9, 'affine')));
   eqInt(P.toRas(Q, o), { data: Array.from(L) }, 'toRas');
   assert.deepStrictEqual(P.fromRas(P.toRas(Q, o), o), Q, 'fromRas undoes toRas');
-  const steps = { thin: true, inferiorClip: true, slCap: true, surfaceTrim: true, trimAll: false, clean: true, followDorsum: true, smooth: true };
-  eqInt(P.toRas(P.fromRas(P.runPipeline(P.toRas(Q, o), P.toRas(I, o), o.dims, o.zooms, steps), o), o), load('pipeline_gentle'), 'pipeline');
+  eqInt(P.toRas(P.fromRas(P.runPipeline(P.toRas(Q, o), P.toRas(I, o), o.dims, o.zooms, GENTLE), o), o), load('pipeline_gentle'), 'pipeline');
   assert.ok(P.rasOrder(dims, zooms, [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]).identity);
 });
 

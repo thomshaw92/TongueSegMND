@@ -5,6 +5,7 @@ from nipype.pipeline import engine as pe
 
 from .config import LatsConfig
 from .nodes.enhance import build_enhance_crop, build_native_qc
+from .nodes.autofix import build_autofix, build_session_fix
 from .nodes.jacobian import build_jacobian
 from .nodes.lateralise import build_lateralise
 from .nodes.preprocess import build_preprocess
@@ -17,7 +18,7 @@ from .nodes.sst import build_publish_sst, build_single_session_sst, build_sst
 from .nodes.stats import build_aggregate, build_stats
 from .reapply import build_reuse, qa_midline
 from .utils.labels import write_labels_file
-from .utils.paths import labels_path, lateral_labels_dir, nipype_base_dir
+from .utils.paths import intermediate_dir, labels_path, lateral_labels_dir, nipype_base_dir
 
 
 def build_workflow(config: LatsConfig) -> pe.Workflow:
@@ -76,6 +77,13 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
             sst_labels_source = (refine, "refined_seg")
         else:
             sst_labels_source = (segment, "sst_segmentation")
+        if config.autofix:
+            autofix = build_autofix(config)
+            wf.connect(sst_labels_source[0], sst_labels_source[1], autofix, "sst_labels")
+            wf.connect(publish, "template", autofix, "sst_image")
+            if config.prob_cut:
+                wf.connect(segment, "sst_probs", autofix, "probs")
+            sst_labels_source = (autofix, "fixed_seg")
 
         # SST -> each cropped session
         register = build_register(config)
@@ -85,11 +93,36 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
         inverse_warp, native_affine = (register, "inverse_warp"), (prep_crop, "affine_mat")
 
     # propagate SST labels to native
-    warp_labels = build_warp_labels(config)
+    mapped = (lambda name: str(intermediate_dir(config.output_prefix) / name)) if config.autofix else (lambda name: None)
+    warp_labels = build_warp_labels(config, output_dir=mapped("labels_mapped"))
     wf.connect(sst_labels_source[0], sst_labels_source[1], warp_labels, "sst_labels")
     wf.connect(*affine, warp_labels, "affine")
     wf.connect(*inverse_warp, warp_labels, "inverse_warp")
     wf.connect(*native_affine, warp_labels, "native_affine")
+    labels_src = (warp_labels, "warped_labels")
+
+    if config.shape:
+        lateralise = build_lateralise(config)
+        wf.connect(sst_labels_source[0], sst_labels_source[1], lateralise, "sst_labels")
+        wf.connect(*template, lateralise, "sst_image")
+        if config.qa_labels:
+            lateralise.inputs.midline_json = qa_midline(config)
+        warp_lateral = build_warp_labels(
+            config, name="warp_lateral_labels",
+            output_dir=mapped("labels_lateral_mapped") or str(lateral_labels_dir(config.output_prefix)),
+        )
+        wf.connect(lateralise, "lateral_labels", warp_lateral, "sst_labels")
+        wf.connect(*affine, warp_lateral, "affine")
+        wf.connect(*inverse_warp, warp_lateral, "inverse_warp")
+        wf.connect(*native_affine, warp_lateral, "native_affine")
+        lateral_src = (warp_lateral, "warped_labels")
+
+    if config.autofix:
+        session_fix = build_session_fix(config, lateral=config.shape)
+        wf.connect(*(lateral_src if config.shape else labels_src), session_fix, "labels")
+        if config.shape:
+            lateral_src = (session_fix, "fixed_lateral")
+        labels_src = (session_fix, "fixed_labels")
 
     # log-Jacobian volumes (multi-session only)
     jacobian = None
@@ -105,7 +138,7 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
     # stats
     stats = build_stats(config)
     stats.inputs.labels_file = labels_file
-    wf.connect(warp_labels, "warped_labels", stats, "warped_labels")
+    wf.connect(*labels_src, stats, "warped_labels")
 
     aggregate = build_aggregate(config)
     aggregate.inputs.labels_file = labels_file
@@ -114,27 +147,11 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
     if jacobian is not None:
         wf.connect(jacobian, "volumes_file", aggregate, "jacobian_files")
 
-    # shape descriptors + lateralisation
     if config.shape:
-        lateralise = build_lateralise(config)
-        wf.connect(sst_labels_source[0], sst_labels_source[1], lateralise, "sst_labels")
-        wf.connect(*template, lateralise, "sst_image")
-        if config.qa_labels:
-            lateralise.inputs.midline_json = qa_midline(config)
-
-        warp_lateral = build_warp_labels(
-            config, name="warp_lateral_labels",
-            output_dir=str(lateral_labels_dir(config.output_prefix)),
-        )
-        wf.connect(lateralise, "lateral_labels", warp_lateral, "sst_labels")
-        wf.connect(*affine, warp_lateral, "affine")
-        wf.connect(*inverse_warp, warp_lateral, "inverse_warp")
-        wf.connect(*native_affine, warp_lateral, "native_affine")
-
         shape = build_shape(config)
         shape.inputs.labels_file = labels_file
-        wf.connect(warp_labels, "warped_labels", shape, "warped_labels")
-        wf.connect(warp_lateral, "warped_labels", shape, "warped_lateral_labels")
+        wf.connect(*labels_src, shape, "warped_labels")
+        wf.connect(*lateral_src, shape, "warped_lateral_labels")
 
         aggregate_shape = build_aggregate_shape(config)
         wf.connect(shape, "descriptors_tsv", aggregate_shape, "shape_files")
@@ -150,10 +167,10 @@ def build_workflow(config: LatsConfig) -> pe.Workflow:
         if config.qc_preproc:
             # QC on the re-preprocessed native image and its resampled labels.
             native_qc = build_native_qc(config)
-            wf.connect(warp_labels, "warped_labels", native_qc, "warped_labels")
+            wf.connect(*labels_src, native_qc, "warped_labels")
             wf.connect(native_qc, "qc_image", qc, "image")
             wf.connect(native_qc, "qc_labels", qc, "warped_labels")
         else:
-            wf.connect(warp_labels, "warped_labels", qc, "warped_labels")
+            wf.connect(*labels_src, qc, "warped_labels")
 
     return wf

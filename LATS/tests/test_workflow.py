@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from lats.cli import _build_parser, _config_from_args, _write_manifest
+from lats.cli import _build_parser, _config_from_args, _write_manifest, main
 from lats.config import LatsConfig, Timepoint
 from lats.utils.labels import TONGUE_LABELS, read_labels_file, write_labels_file
 from lats.utils.paths import manifest_path
@@ -43,6 +43,19 @@ def test_workflow_has_expected_stages(tmp_path):
                      "segment_sst", "register", "warp_labels", "jacobian",
                      "stats", "aggregate", "qc"):
         assert expected in names, f"missing {expected} in {sorted(names)}"
+
+
+def test_sessions_are_fixed_before_stats_shape_and_qc(tmp_path):
+    wf = build_workflow(_config(tmp_path))
+    for node in ("stats", "shape", "native_qc"):
+        src = {e[0].name for e in wf._graph.in_edges(wf.get_node(node))}
+        assert "session_fix" in src and "warp_labels" not in src, f"{node} takes {src}"
+    assert "autofix" in wf.list_node_names()
+    off = build_workflow(_config(tmp_path, autofix=False))
+    assert not {"autofix", "session_fix"} & set(off.list_node_names())
+    probs = lambda w: ("sst_probs", "probs") in w._graph.get_edge_data(w.get_node("segment_sst"), w.get_node("autofix"))["connect"]
+    nocut = build_workflow(_config(tmp_path, prob_cut=0.0))
+    assert probs(wf) and not probs(nocut), "probabilities reach the fix step only with the cut (on by default)"
 
 
 def test_optional_stages_can_be_disabled(tmp_path):
@@ -156,17 +169,67 @@ def test_reapply_reuses_the_run_and_keeps_its_outputs(tmp_path):
     cfg = _finished_run(tmp_path)
     qa = _qa_labels(tmp_path, {"status": "done", "decision": "include", "midline": {"point_mm": [1, 2, 3], "normal": [1, 0, 0]}})
     cfg = dataclasses.replace(cfg, qa_labels=qa)
-    prepare_reapply(cfg)
     out = cfg.output_prefix
+    (out / "intermediate/labels_mapped").mkdir(parents=True)
+    (out.parent / "out_nipype/lats/warp_labels").mkdir(parents=True)
+    read = prepare_reapply(cfg)
     assert (out / "pre_qa/stats/volumes.csv").is_file() and (out / "pre_qa/lats_run.json").is_file()
     assert (out / "pre_qa/midline.json").is_file() and not (out / "sst/midline.json").exists()
+    assert (out / "pre_qa/labels_mapped").is_dir(), "the unfixed session warps are kept"
     assert not (out / "stats").exists() and not (out / "qa_applied.json").exists()
-    write_applied(cfg)
+    assert not (out.parent / "out_nipype").exists(), "no cached nodes from an earlier run"
+    write_applied(cfg, read)
     applied = json.loads((out / "qa_applied.json").read_text())
     assert applied["midline_from"].endswith("_dseg.json") and len(applied["sidecar_sha256"]) == 64
+    assert applied["sha256"] == read["sha256"]
+    side = tmp_path / "sub-01_space-sst_desc-qa_dseg.json"
+    side.write_text(side.read_text().replace("include", "include "))
+    with pytest.raises(ValueError, match="changed during the run"):
+        write_applied(cfg, read)
     names = set(build_workflow(dataclasses.replace(cfg, shape=True)).list_node_names())
     assert "reuse" in names and "warp_labels" in names and "lateralise" in names
     assert not names & {"preprocess", "prep_crop", "sst", "segment_sst", "register"}
+
+
+def test_full_run_refuses_a_folder_that_has_been_through_qa(tmp_path, capsys):
+    cfg = _finished_run(tmp_path)
+    (cfg.output_prefix / "qa_applied.json").write_text("{}")
+    for extra in ([], ["--overwrite"]):
+        assert main(["-o", str(cfg.output_prefix), str(cfg.timepoints[0].image)] + extra) == 1
+        assert "has been through QA" in capsys.readouterr().err
+
+
+def _no_checks(monkeypatch):
+    monkeypatch.setattr("lats.cli.check_dependencies", lambda config: [])
+    monkeypatch.setattr("lats.utils.checks.preflight", lambda images: [])
+
+
+def test_full_run_refuses_a_finished_run_unless_overwrite(tmp_path, capsys, monkeypatch):
+    cfg = _finished_run(tmp_path)
+    out, argv = cfg.output_prefix, ["-o", str(cfg.output_prefix), "-R", "docker", str(cfg.timepoints[0].image)]
+    assert main(argv) == 1
+    assert "already holds a finished LATS run" in capsys.readouterr().err
+
+    class Failing:
+        list_node_names = lambda self: []
+        def run(self, **kw):
+            raise RuntimeError("stops the test run after the clear-out")
+    _no_checks(monkeypatch)
+    monkeypatch.setattr("lats.cli.build_workflow", lambda config: Failing())
+    (out / "notes.txt").write_text("not from LATS")
+    (out.parent / "out_nipype").mkdir()
+    assert main(argv + ["--overwrite", "--dry-run"]) == 0 and (out / "stats/volumes.csv").is_file(), "a dry run deletes nothing"
+    assert main(argv + ["--overwrite"]) == 1
+    assert sorted(p.name for p in out.iterdir()) == ["lats_run.json", "notes.txt"], "only LATS's outputs are deleted"
+    assert not (out.parent / "out_nipype").exists()
+
+
+def test_dry_run_of_a_reapply_needs_no_segmenter(tmp_path, capsys, monkeypatch):
+    cfg = _finished_run(tmp_path)
+    qa = _qa_labels(tmp_path, {"status": "done", "decision": "include"})
+    _no_checks(monkeypatch)
+    assert main(["-o", str(cfg.output_prefix), "--qa-labels", str(qa), "--dry-run"] + [str(tp.image) for tp in cfg.timepoints]) == 0
+    assert "runtime=reuse" in capsys.readouterr().out
 
 
 def test_reapply_rejects_labels_off_the_template_grid(tmp_path):
@@ -212,3 +275,8 @@ def test_reapply_after_a_crash_keeps_the_original_outputs(tmp_path):
     prepare_reapply(dataclasses.replace(cfg, qa_labels=_qa_labels(tmp_path, {"status": "done", "decision": "include"})))
     assert not (out / "stats").exists() and (out / "pre_qa/stats/volumes.csv").read_bytes() == b"x"
     assert not (out / "sst/midline.json").exists() and not (out / "pre_qa/midline.json").exists(), "a re-apply's output is never kept as original"
+
+
+def test_no_autofix_asks_the_segmenter_for_no_probabilities(tmp_path):
+    seg = lambda **kw: build_workflow(_config(tmp_path, **kw)).get_node("segment_sst").inputs.save_probs
+    assert seg() is True and seg(prob_cut=0.0) is False and seg(autofix=False) is False and seg(autofix=False, prior_use_probs=True) is True

@@ -10,19 +10,22 @@ npm run serve
 ```
 
 Then open http://localhost:8000, enter your initials and open a BIDS folder whose `derivatives/lats`
-holds LATS outputs. The app lists every template (one per run) and every session, and takes each
-through seven steps: rate the scan, rate the labels, correct the surface, follow the dorsum and smooth,
-check the midline (templates only), rate the corrected labels, and decide (include, edit by hand in
-the app or in ITK-SNAP, or exclude). Each step has an information button.
+holds LATS outputs. The app has two streams, done in order.
 
-Labels, a JSON record per item (ratings, settings, midline, decision, rater and time) and `qa.tsv`
-are written to `derivatives/lats-qa`, named after the image (`*_desc-qa_dseg.nii.gz`). Work is saved
-as you go; reopening the folder resumes at the first unfinished item.
+1. **Templates**, one per run, in five steps: rate the template and each session's scan (no labels shown),
+   correct the surface (moving or turning the whole segmentation first if it sits off), follow the dorsum and smooth, check the midline, then rate the corrected labels and
+   decide (include, edit by hand in the app or in ITK-SNAP, or exclude). When the templates are done, re-apply
+   them with LATS (`--qa-labels`, or `lats_submit.sh --qa` on a cluster). LATS re-applies only templates marked
+   include, and uses the midline saved with each one.
+2. **Sessions**, which open once LATS has re-applied a template: rate how well the re-applied labels fit each
+   session's scan, then include or exclude it. Every session must be checked; labels are not edited here. If a
+   template is changed after LATS re-applied it, its sessions close until LATS re-applies it again, and then
+   need checking again.
 
-Do the templates first. When they are done, re-apply them with LATS (`--qa-labels`, or
-`lats_submit.sh --qa` on a cluster) so every session gets the corrected labels, then do the sessions.
-LATS re-applies only templates marked include. It takes every session's labels from its template, so the
-session pass records ratings and include or exclude; labels saved for a session are not used by LATS.
+Each step has an information button. Labels, a JSON record per item (ratings, settings, midline, decision,
+rater and time) and `qa.tsv` (including the options changed from the defaults) are written to
+`derivatives/lats-qa`, named after the image (`*_desc-qa_dseg.nii.gz`). Work is saved as you go; reopening the
+folder resumes at the first unfinished item.
 
 ## Test
 

@@ -45,3 +45,27 @@ def test_anisotropic_det_is_product_of_scales(tmp_path):
     assert add_logjac == pytest.approx(math.log(0.99))
     assert scale_vol < 1.0
     assert add_logjac < 0.0
+
+
+def test_longitudinal_change_is_jacobian_only(tmp_path):
+    import csv
+
+    import nibabel as nib
+
+    from lats.nodes.stats import _aggregate
+
+    (tmp_path / "labels.txt").write_text("1 vertical\n")
+    nib.save(nib.Nifti1Image(np.ones((2, 2, 2), np.uint8), np.eye(4)), str(tmp_path / "sst.nii.gz"))
+    stats, jacs = [], []
+    for t, (seg, jac) in enumerate([(1000.0, 1000.0), (1000.0, 900.0)]):
+        s, j = tmp_path / f"s{t}.txt", tmp_path / f"j{t}.txt"
+        s.write_text(f"1\tvertical\t{seg}\t1000\n0\twhole tongue\t{seg}\t1000\n")
+        j.write_text(f"1\tvertical\t{jac}\t0.0\n0\twhole tongue\t{jac}\t0.0\n")
+        stats.append(str(s)); jacs.append(str(j))
+    _, long_path = _aggregate(stats, jacs, str(tmp_path / "sst.nii.gz"), str(tmp_path / "labels.txt"),
+                              ["a.nii.gz", "b.nii.gz"], str(tmp_path / "out"))
+    rows = list(csv.DictReader(open(long_path)))
+    assert "seg_pct_change" not in rows[0]
+    tp1 = next(r for r in rows if r["timepoint"] == "1" and r["label_id"] == "1")
+    assert float(tp1["jac_pct_change"]) == pytest.approx(-10.0)
+    assert float(tp1["seg_volume_mm3"]) == pytest.approx(1000.0)

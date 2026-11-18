@@ -87,7 +87,7 @@ function dtAxis(f, dims, axis, sp2) {
   }
 }
 
-export function fillNearest(labels, holes, dims, ban = 0) {
+function fillNearest(labels, holes, dims, ban = -1, background = false) {
   const [nx, ny, nz] = dims, sx = ny * nz, sy = nz;
   const out = Int32Array.from(labels);
   const todo = Uint8Array.from(holes);
@@ -102,7 +102,7 @@ export function fillNearest(labels, holes, dims, ban = 0) {
       if (x > 0) nb.push(i - sx); if (x < nx - 1) nb.push(i + sx);
       if (y > 0) nb.push(i - sy); if (y < ny - 1) nb.push(i + sy);
       if (z > 0) nb.push(i - 1); if (z < nz - 1) nb.push(i + 1);
-      for (const j of nb) { const lv = out[j]; if (lv > 0 && lv !== ban) counts.set(lv, (counts.get(lv) || 0) + 1); }
+      for (const j of nb) { const lv = out[j]; if ((lv > 0 || (background && !todo[j])) && lv !== ban) counts.set(lv, (counts.get(lv) || 0) + 1); }
       if (counts.size) {
         let best = -1, bc = -1;
         for (const k of [...counts.keys()].sort((a, b) => a - b)) if (counts.get(k) > bc) { bc = counts.get(k); best = k; }
@@ -227,7 +227,7 @@ export function surfaceTrim(labels, image, dims, lo, hi, iters = 6, which = LABE
   return out;
 }
 
-// Drops pieces under a quarter of each muscle's largest (inferior longitudinal: under 50 mm3), then refills; no erosion.
+// Drops pieces under a quarter of each muscle's largest (inferior longitudinal: under 50 mm3) to what surrounds them.
 export function cleanLabels(labels, dims, zooms) {
   const out = new Int32Array(labels.length), ilMin = Math.ceil(50 / (zooms[0] * zooms[1] * zooms[2]));
   for (const k of LABELS) {
@@ -241,7 +241,7 @@ export function cleanLabels(labels, dims, zooms) {
   const holes = new Uint8Array(labels.length);
   let anyHole = false;
   for (let i = 0; i < labels.length; i++) if (labels[i] > 0 && out[i] === 0) { holes[i] = 1; anyHole = true; }
-  return anyHole ? fillNearest(out, holes, dims) : out;
+  return anyHole ? fillNearest(out, holes, dims, -1, true) : out;
 }
 
 function gaussianKernel(sigma) {
@@ -253,10 +253,9 @@ function gaussianKernel(sigma) {
   return k;
 }
 
-function gaussianBlur(mask, dims, sigma) {
-  const kern = gaussianKernel(sigma), pad = (kern.length - 1) / 2;
+function gaussianBlur(mask, dims, sigmas) {
   let x = Float64Array.from(mask);
-  for (let axis = 0; axis < 3; axis++) x = conv1dReflect(x, dims, axis, kern, pad);
+  for (let axis = 0; axis < 3; axis++) { const kern = gaussianKernel(sigmas[axis]); x = conv1dReflect(x, dims, axis, kern, (kern.length - 1) / 2); }
   return x;
 }
 
@@ -265,9 +264,8 @@ function conv1dReflect(f, dims, axis, kern, pad) {
   const stride = axis === 0 ? ny * nz : axis === 1 ? nz : 1;
   const a1 = axis === 0 ? 1 : 0, a2 = axis === 0 ? 2 : (axis === 1 ? 2 : 1);
   const d = [nx, ny, nz], out = new Float64Array(f.length), line = new Float64Array(n);
-  const refl = (q) => { // numpy.pad 'reflect' (no edge repeat): abc -> ...b|abc|b...
-    if (n === 1) return 0;
-    const p = 2 * (n - 1); let m = ((q % p) + p) % p; return m < n ? m : p - m;
+  const refl = (q) => { // edge repeated, as scipy.ndimage 'reflect' in LATS: abc -> ...cba|abc|cba...
+    const p = 2 * n, m = ((q % p) + p) % p; return m < n ? m : p - 1 - m;
   };
   for (let i1 = 0; i1 < d[a1]; i1++) for (let i2 = 0; i2 < d[a2]; i2++) {
     const c = [0, 0, 0]; c[a1] = i1; c[a2] = i2;
@@ -301,15 +299,14 @@ export function followDorsum(pre, post, dims) {
   return out;
 }
 
-export function smoothLabels(labels, dims, sigma = 0.8) {
-  const blurred = LABELS.map(k => {
-    const m = new Uint8Array(labels.length);
-    for (let i = 0; i < labels.length; i++) m[i] = labels[i] === k ? 1 : 0;
-    return gaussianBlur(m, dims, sigma);
-  });
+// Smooths the outline and the muscle boundaries.
+export function smoothLabels(labels, dims, zooms, sigmaMm = 1.0) {
+  const s = zooms.map(z => sigmaMm / z);
+  const outline = gaussianBlur(Uint8Array.from(labels, v => (v > 0 ? 1 : 0)), dims, s);
+  const blurred = LABELS.map(k => gaussianBlur(Uint8Array.from(labels, v => (v === k ? 1 : 0)), dims, s));
   const out = new Int32Array(labels.length);
   for (let i = 0; i < labels.length; i++) {
-    if (labels[i] === 0) continue;
+    if (outline[i] < 0.5) continue;
     let best = 0, bv = -Infinity;
     for (let j = 0; j < LABELS.length; j++) if (blurred[j][i] > bv) { bv = blurred[j][i]; best = LABELS[j]; }
     out[i] = best;
@@ -317,20 +314,183 @@ export function smoothLabels(labels, dims, sigma = 0.8) {
   return out;
 }
 
-export function runPipeline(labels, image, dims, zooms, steps) {
+// Intensity band of one muscle: median +- k robust SD of its interior (2+ voxels deep).
+export function muscleBand(image, labels, dims, label, k = 2) {
+  const m = Uint8Array.from(labels, v => (v === label ? 1 : 0)), inner = erode6(erode6(m, dims), dims);
+  let n = 0, nm = 0;
+  for (let i = 0; i < m.length; i++) { n += inner[i]; nm += m[i]; }
+  if (!nm) return [-Infinity, Infinity];
+  const vals = [];
+  for (let i = 0; i < m.length; i++) if (n >= 50 ? inner[i] : m[i]) vals.push(image[i]);
+  const med = median(vals), sd = median(vals.map(v => Math.abs(v - med))) / 0.6745 + 1e-6;
+  return [med - k * sd, med + k * sd];
+}
+
+// No inferior longitudinal above the lowest superior longitudinal voxel of its column; those join their neighbours.
+export function orderInflong(labels, dims) {
+  const [nx, ny, nz] = dims, out = Int32Array.from(labels), holes = new Uint8Array(labels.length);
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) {
+    const b = (x * ny + y) * nz;
+    let low = nz;
+    for (let z = 0; z < nz; z++) if (labels[b + z] === SUPLONG) { low = z; break; }
+    for (let z = low + 1; z < nz; z++) if (labels[b + z] === INFLONG) { holes[b + z] = 1; out[b + z] = 0; }
+  }
+  return fillNearest(out, holes, dims, INFLONG);
+}
+
+export function largestPiece(labels, dims) {
+  const keep = majorCC(Uint8Array.from(labels, v => (v > 0 ? 1 : 0)), dims, 1.0);
+  return Int32Array.from(labels, (v, i) => (keep[i] ? v : 0));
+}
+
+function dilate6(m, dims) {
+  const [nx, ny, nz] = dims, sx = ny * nz, out = Uint8Array.from(m);
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {
+    const i = idx(x, y, z, ny, nz);
+    if (!m[i] && ((x > 0 && m[i - sx]) || (x < nx - 1 && m[i + sx]) || (y > 0 && m[i - nz]) || (y < ny - 1 && m[i + nz]) ||
+      (z > 0 && m[i - 1]) || (z < nz - 1 && m[i + 1]))) out[i] = 1;
+  }
+  return out;
+}
+
+// Removes thick dark tongue that joins the outside.
+export function darkCut(labels, image, dims, k = 3) {
+  const fg = Uint8Array.from(labels, v => (v > 0 ? 1 : 0)), [lo] = muscleBand(image, fg, dims, 1, k);
+  const dark = dilate6(dilate6(erode6(erode6(Uint8Array.from(fg, (f, i) => (f && image[i] < lo ? 1 : 0)), dims), dims), dims), dims);
+  const seen = reach(Uint8Array.from(fg, f => 1 - f), Uint8Array.from(fg, (f, i) => (!f || dark[i] ? 1 : 0)), dims);
+  return Int32Array.from(labels, (v, i) => (dark[i] && seen[i] ? 0 : v));
+}
+
+// Voxels of allowed 6-connected to seed (seed inside allowed).
+function reach(seed, allowed, dims) {
+  const [nx, ny, nz] = dims, sx = ny * nz, out = Uint8Array.from(seed, (s, i) => (s && allowed[i] ? 1 : 0)), q = new Int32Array(seed.length);
+  let head = 0, tail = 0;
+  for (let i = 0; i < out.length; i++) if (out[i]) q[tail++] = i;
+  while (head < tail) {
+    const i = q[head++], z = i % nz, y = ((i - z) / nz) % ny, x = Math.floor(i / sx);
+    for (const [ok, j] of [[x > 0, i - sx], [x < nx - 1, i + sx], [y > 0, i - nz], [y < ny - 1, i + nz], [z > 0, i - 1], [z < nz - 1, i + 1]])
+      if (ok && !out[j] && allowed[j]) { out[j] = 1; q[tail++] = j; }
+  }
+  return out;
+}
+
+export function genioRules(labels, dims, zooms) {
+  const [nx, ny, nz] = dims, xs = [];
+  let any = false;
+  for (let i = 0; i < labels.length; i++) { if (labels[i] > 0) xs.push(Math.floor(i / (ny * nz))); if (labels[i] === GENIO) any = true; }
+  if (!any) return labels;
+  const mid = median(xs), right = new Float64Array(ny).fill(-Infinity), left = new Float64Array(ny).fill(Infinity),
+    vz = new Float64Array(ny).fill(-Infinity), vy = new Float64Array(nx).fill(-Infinity), sy = new Float64Array(nx).fill(-Infinity);
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {
+    const v = labels[idx(x, y, z, ny, nz)];
+    if (v > 0 && v !== GENIO) { if (x >= mid) right[y] = Math.max(right[y], x); else left[y] = Math.min(left[y], x); }
+    if (v === VERTICAL) { vz[y] = Math.max(vz[y], z); vy[x] = Math.max(vy[x], y); }
+    if (v === SUPLONG) sy[x] = Math.max(sy[x], y);
+  }
+  const out = Int32Array.from(labels), bad = new Uint8Array(labels.length);
+  let n = 0;
+  for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) {
+    const i = idx(x, y, z, ny, nz);
+    if (labels[i] !== GENIO) continue;
+    const side = x >= mid ? isFinite(right[y]) && (x - right[y]) * zooms[0] > 0.5 : isFinite(left[y]) && (left[y] - x) * zooms[0] > 0.5;
+    if (side || (isFinite(vz[y]) && z > vz[y]) || (isFinite(vy[x]) && (y - vy[x]) * zooms[1] > 4) || (isFinite(sy[x]) && (y - sy[x]) * zooms[1] > 11)) {
+      bad[i] = 1; out[i] = 0; n++;
+    }
+  }
+  if (!n) return labels;
+  const edge = Uint8Array.from(out, (v, i) => { const z = i % nz, y = ((i - z) / nz) % ny, x = Math.floor(i / (ny * nz)); return x === 0 || y === 0 || z === 0 || x === nx - 1 || y === ny - 1 || z === nz - 1; });
+  const outside = reach(edge, Uint8Array.from(out, v => (v ? 0 : 1)), dims);
+  const enclosed = Uint8Array.from(bad, (b, i) => (b && !outside[i] ? 1 : 0));
+  return enclosed.some(v => v) ? fillNearest(out, enclosed, dims) : out;
+}
+
+// The outermost side voxel of vertical and superior longitudinal (background next to it left or right) goes.
+export function shaveSide(labels, dims) {
+  const [nx, ny, nz] = dims, sx = ny * nz;
+  return Int32Array.from(labels, (v, i) => {
+    const x = Math.floor(i / sx);
+    return (v === VERTICAL || v === SUPLONG) && x > 0 && x < nx - 1 && (!labels[i - sx] || !labels[i + sx]) ? 0 : v;
+  });
+}
+
+// Removes vertical with no mirror partner across the midline plane where the tongue probability is low.
+export function mirrorCut(labels, dims, zooms, affine, { point, normal }, tongueProb, distMm = 2, prob = 0.9999) {
+  const [nx, ny, nz] = dims, len = Math.hypot(...normal), n = normal.map(v => v / len), inv = inv4(affine);
+  const mir = new Uint8Array(labels.length);
+  forEachVoxel(labels, dims, v => v > 0, (i, j, k) => {
+    const w = world(affine, i, j, k), s = 2 * ((w[0] - point[0]) * n[0] + (w[1] - point[1]) * n[1] + (w[2] - point[2]) * n[2]);
+    const d = [0, 1, 2].map(r => w[r] - s * n[r] - affine[r][3]);
+    const [a, b, c] = [0, 1, 2].map(r => rint(inv[r][0] * d[0] + inv[r][1] * d[1] + inv[r][2] * d[2]));
+    if (a >= 0 && a < nx && b >= 0 && b < ny && c >= 0 && c < nz) mir[idx(a, b, c, ny, nz)] = 1;
+  });
+  const far = edt(Uint8Array.from(erode6(dilate6(mir, dims), dims), m => 1 - m), dims, zooms);
+  return Int32Array.from(labels, (v, q) => (v === VERTICAL && far[q] > distMm && tongueProb[q] < prob ? 0 : v));
+}
+
+// numpy's rint: halves go to the even neighbour.
+const rint = v => { const r = Math.round(v); return r - v === 0.5 && r % 2 !== 0 ? r - 1 : r; };
+
+export function inv4(A) {   // inverse of an affine (last row 0 0 0 1), as its top three rows
+  const [[a, b, d, tx], [e, f, g, ty], [h, i, k, tz]] = A, det = a * (f * k - g * i) - b * (e * k - g * h) + d * (e * i - f * h);
+  const R = [[f * k - g * i, d * i - b * k, b * g - d * f], [g * h - e * k, a * k - d * h, d * e - a * g],
+    [e * i - f * h, b * h - a * i, a * f - b * e]].map(r => r.map(v => v / det));
+  return R.map(r => [...r, -(r[0] * tx + r[1] * ty + r[2] * tz)]);
+}
+
+// Rotation for [pitch, yaw, roll] in degrees (R = Rz Ry Rx), rounded to 1e-12.
+export function moveRotation(deg) {
+  const [p, y, r] = deg.map(a => a * Math.PI / 180);
+  const cp = Math.cos(p), sp = Math.sin(p), cy = Math.cos(y), sy = Math.sin(y), cr = Math.cos(r), sr = Math.sin(r);
+  return [[cy * cr, cy * sr * sp - sy * cp, cy * sr * cp + sy * sp], [sy * cr, sy * sr * sp + cy * cp, sy * sr * cp - cy * sp],
+    [-sr, cr * sp, cr * cp]].map(row => row.map(v => Math.round(v * 1e12) / 1e12));
+}
+
+export function tongueCentre(labels, dims, zooms) {
+  const [, ny, nz] = dims, s = [0, 0, 0];
+  let n = 0;
+  for (let q = 0; q < labels.length; q++) if (labels[q] > 0) { s[0] += Math.floor(q / (ny * nz)); s[1] += Math.floor(q / nz) % ny; s[2] += q % nz; n++; }
+  return s.map((v, a) => v / n * zooms[a]);
+}
+
+// Moves the arrays rigidly, nearest neighbour; arrays may be null.
+export function moveVolumes(arrays, dims, zooms, R, t, c) {
+  const [nx, ny, nz] = dims, outs = arrays.map(a => a && new a.constructor(a.length));
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++) {
+    const d0 = i * zooms[0] - c[0] - t[0], d1 = j * zooms[1] - c[1] - t[1], d2 = k * zooms[2] - c[2] - t[2];
+    const si = Math.floor((R[0][0] * d0 + R[1][0] * d1 + R[2][0] * d2 + c[0]) / zooms[0] + 0.5);
+    const sj = Math.floor((R[0][1] * d0 + R[1][1] * d1 + R[2][1] * d2 + c[1]) / zooms[1] + 0.5);
+    const sk = Math.floor((R[0][2] * d0 + R[1][2] * d1 + R[2][2] * d2 + c[2]) / zooms[2] + 0.5);
+    if (si < 0 || sj < 0 || sk < 0 || si >= nx || sj >= ny || sk >= nz) continue;
+    const src = (si * ny + sj) * nz + sk, o = (i * ny + j) * nz + k;
+    for (let m = 0; m < arrays.length; m++) if (outs[m]) outs[m][o] = arrays[m][src];
+  }
+  return outs;
+}
+
+export function runPipeline(labels, image, dims, zooms, steps, tongueProb = null, mirror = null) {
+  const mm = [steps.mvX || 0, steps.mvY || 0, steps.mvZ || 0], deg = [steps.mvPitch || 0, steps.mvYaw || 0, steps.mvRoll || 0];
+  if ([...mm, ...deg].some(v => v) && labels.some(v => v > 0)) {
+    [labels, tongueProb] = moveVolumes([labels, tongueProb], dims, zooms, moveRotation(deg), mm, tongueCentre(labels, dims, zooms));
+  }
   let out = Int32Array.from(labels);
   if (steps.thin) out = thinSuplong(out, dims, zooms, steps.keepFrac ?? 0.88);
   if (steps.inferiorClip) out = suplongInferiorClip(out, dims);
   if (steps.slCap) out = slCap(out, dims);
-  const pre = Int32Array.from(out);
-  if (steps.surfaceTrim) {
-    const [lo, hi] = tissueBand(image, out, steps.trimK ?? 1.5);
-    const which = (steps.trimAll ?? true) ? LABELS : [SUPLONG];
-    out = surfaceTrim(out, image, dims, lo, hi, 6, which);
-  }
+  const pre = Int32Array.from(out), k = steps.trimSd ?? 2;
+  if (steps.slTrim) out = surfaceTrim(out, image, dims, ...muscleBand(image, out, dims, SUPLONG, k), steps.slTrim, [SUPLONG]);
   if (steps.followDorsum) out = followDorsum(pre, out, dims);
-  if (steps.clean) out = cleanLabels(out, dims, zooms);
-  if (steps.smooth) out = smoothLabels(out, dims, steps.sigma ?? 0.8);
+  if (steps.ilTrim) out = surfaceTrim(out, image, dims, ...muscleBand(image, out, dims, INFLONG, k), steps.ilTrim, [INFLONG]);
+  if (steps.order) out = orderInflong(out, dims);
+  if (steps.darkSd) out = darkCut(out, image, dims, steps.darkSd);
+  if (steps.probCut && tongueProb) {
+    const unsure = Uint8Array.from(out, (v, k) => (v > 0 && tongueProb[k] < steps.probCut ? 1 : 0));
+    out = fillNearest(Int32Array.from(out, (v, k) => (unsure[k] ? 0 : v)), unsure, dims, -1, true);
+  }
+  if (steps.smooth) out = smoothLabels(out, dims, zooms, steps.sigma ?? 1);
+  if (steps.genio) out = genioRules(out, dims, zooms);
+  if (steps.shave) out = shaveSide(out, dims);
+  if (steps.clean) out = largestPiece(cleanLabels(out, dims, zooms), dims);
+  if (steps.mirror && mirror && tongueProb) out = largestPiece(cleanLabels(mirrorCut(out, dims, zooms, mirror.affine, mirror, tongueProb), dims, zooms), dims);
   return out;
 }
 

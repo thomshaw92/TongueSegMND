@@ -12,11 +12,12 @@ from nipype.interfaces.utility import IdentityInterface
 from nipype.pipeline import engine as pe
 
 from .config import LatsConfig
-from .utils.paths import (intermediate_dir, jacobian_dir, labels_dir, lateral_labels_dir, manifest_path, qc_dir,
-                          reg_dir, shape_dir, sst_dir, stats_dir)
+from .utils.paths import (intermediate_dir, jacobian_dir, labels_dir, lateral_labels_dir, manifest_path, nipype_base_dir,
+                          qc_dir, reg_dir, shape_dir, sst_dir, stats_dir)
 
 DERIVED = (stats_dir, labels_dir, lateral_labels_dir, jacobian_dir, shape_dir, qc_dir,
            lambda out: sst_dir(out) / "midline.json", lambda out: sst_dir(out) / "sst_seg_lateralised.nii.gz",
+           lambda out: intermediate_dir(out) / "labels_mapped", lambda out: intermediate_dir(out) / "labels_lateral_mapped",
            manifest_path)                      # last: pre_qa/lats_run.json marks the original outputs as fully moved
 
 
@@ -49,7 +50,14 @@ def _sha256(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def prepare_reapply(config: LatsConfig) -> None:
+def qa_hashes(config: LatsConfig) -> dict:
+    side = qa_sidecar(config)
+    return {"sha256": _sha256(config.qa_labels), "sidecar_sha256": _sha256(side) if side.is_file() else None}
+
+
+def prepare_reapply(config: LatsConfig) -> dict:
+    """Checks the run and the QA labels, moves the original outputs to pre_qa/ and returns the QA hashes."""
+    hashes = qa_hashes(config)
     files = reuse_files(config)
     paths = [p for v in files.values() for p in (v if isinstance(v, list) else [v]) if p != ""]
     missing = [str(p) for p in paths if not Path(p).is_file()]
@@ -73,6 +81,7 @@ def prepare_reapply(config: LatsConfig) -> None:
     if before != now:
         raise ValueError(f"the sessions differ from the original run: {before} vs {now}")
     (out / "qa_applied.json").unlink(missing_ok=True)
+    shutil.rmtree(nipype_base_dir(out), ignore_errors=True)
     first = not (pre / "lats_run.json").is_file()
     pre.mkdir(exist_ok=True)
     for p in (f(out) for f in DERIVED):
@@ -82,15 +91,15 @@ def prepare_reapply(config: LatsConfig) -> None:
             shutil.move(str(p), str(pre / p.name))
         else:
             shutil.rmtree(p) if p.is_dir() else p.unlink()
+    return hashes
 
 
-def write_applied(config: LatsConfig) -> None:
-    side = qa_sidecar(config)
+def write_applied(config: LatsConfig, hashes: dict) -> None:
+    """Marks the run as re-applied with the QA labels it read; fails if they or their record changed during the run."""
+    if qa_hashes(config) != hashes:
+        raise ValueError(f"{config.qa_labels.name} or its record changed during the run; run --qa-labels again")
     (config.output_prefix / "qa_applied.json").write_text(json.dumps({
-        "qa_labels": str(config.qa_labels),
-        "sha256": _sha256(config.qa_labels),
-        "sidecar_sha256": _sha256(side) if side.is_file() else None,
-        "midline_from": qa_midline(config) or None,
+        "qa_labels": str(config.qa_labels), **hashes, "midline_from": qa_midline(config) or None,
     }, indent=2) + "\n")
 
 

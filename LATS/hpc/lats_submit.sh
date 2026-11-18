@@ -32,13 +32,15 @@ Slurm:
   -h, --help               show this help
 
 LATS options: everything after "--" replaces the default
-  -M T1w -n --denoise --prior-refine --prior-probs
+  -M T1w -n --prior-refine --prior-probs
 -o, -j and the images are set per run, so leave them out.
 
 The list is copied into the logs folder at submission and the tasks read that
 copy, so remaking the lists does not change a running job. A run whose
 stats/volumes.csv exists is skipped, so resubmitting a list only redoes the
-missing runs.
+missing runs. With --qa, a run is skipped when its qa_applied.json matches
+the QA labels and their record; a run whose re-apply failed is redone with
+--qa, as a submit without --qa refuses a folder that has been through QA.
 EOF
 }
 
@@ -50,7 +52,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 task=$here/lats_task.sh
 list= sif= partition= account= cpus=1 mem=16G time=04:00:00 maxpar=20 name=lats
 tasks= logs=lats_logs extra= dry=0 qa=
-lats_args=(-M T1w -n --denoise --prior-refine --prior-probs)
+lats_args=(-M T1w -n --prior-refine --prior-probs)
 
 while [ $# -gt 0 ]; do
   case $1 in

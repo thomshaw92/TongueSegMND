@@ -1,5 +1,7 @@
 """Reference tongue post-processing; web/js/postproc.js must match it voxel for voxel."""
 
+import math
+
 import numpy as np
 
 VERTICAL = 1
@@ -92,7 +94,7 @@ def _dt_axis(f, axis, sp2):
     return np.moveaxis(flat.reshape(shape), -1, axis)
 
 
-def fill_nearest(labels, holes, ban=0):
+def fill_nearest(labels, holes, ban=-1, background=False):
     """Fill ``holes`` by iterative majority dilation of neighbouring labels (ties -> lowest id)."""
     out = labels.copy()
     todo = holes & (out == 0)
@@ -106,7 +108,7 @@ def fill_nearest(labels, holes, ban=0):
                 a, b, c = x+dx, y+dy, z+dz
                 if 0 <= a < nx and 0 <= b < ny and 0 <= c < nz:
                     lv = out[a, b, c]
-                    if lv > 0 and lv != ban:
+                    if (lv > 0 or (background and not todo[a, b, c])) and lv != ban:
                         counts[lv] = counts.get(lv, 0) + 1
             if counts:
                 best = max(sorted(counts), key=lambda k: counts[k])
@@ -225,7 +227,7 @@ def surface_trim(labels, image, lo, hi, iters=6, which=LABELS):
 
 
 def clean_labels(labels, zooms):
-    """Drop pieces under a quarter of each muscle's largest (inferior longitudinal: under 50 mm3), then refill; no erosion."""
+    """Drop pieces under a quarter of each muscle's largest (inferior longitudinal: under 50 mm3) to what surrounds them."""
     out = np.zeros_like(labels)
     il_min = int(np.ceil(50.0 / float(np.prod(zooms))))
     for k in LABELS:
@@ -234,7 +236,7 @@ def clean_labels(labels, zooms):
             out[major_cc(m, 0, il_min) if k == INFLONG else major_cc(m, 0.25)] = k
     holes = (labels > 0) & (out == 0)
     if holes.any():
-        out = fill_nearest(out, holes)
+        out = fill_nearest(out, holes, background=True)
     return out
 
 
@@ -258,31 +260,54 @@ def follow_dorsum(pre, post):
     return out
 
 
-def smooth_labels(labels, sigma=0.8):
-    """Probabilistic-majority smoothing: blur each label mask, take the argmax."""
-    fg = labels > 0
-    stack = np.stack([_gaussian(labels == k, sigma) for k in LABELS], axis=-1)
+def muscle_band(image, labels, label, k=2.0):
+    """Intensity band of one muscle: median +- k robust SD of its interior (2+ voxels deep)."""
+    m = labels == label
+    if not m.any():
+        return -np.inf, np.inf
+    inner = erode6(erode6(m))
+    v = image[inner if inner.sum() >= 50 else m]
+    med = float(np.median(v))
+    sd = float(np.median(np.abs(v - med))) / 0.6745 + 1e-6
+    return med - k * sd, med + k * sd
+
+
+def order_inflong(labels):
+    """No inferior longitudinal above the lowest superior longitudinal voxel of its column; those join their neighbours."""
+    sl = labels == SUPLONG
+    low = np.where(sl.any(2), sl.argmax(2), labels.shape[2])
+    bad = (labels == INFLONG) & (np.arange(labels.shape[2])[None, None, :] > low[..., None])
+    return fill_nearest(np.where(bad, 0, labels).astype(labels.dtype), bad, ban=INFLONG)
+
+
+def largest_piece(labels):
+    keep = major_cc(labels > 0, 1.0)
+    return np.where(keep, labels, 0).astype(labels.dtype)
+
+
+def smooth_labels(labels, zooms, sigma_mm=1.0):
+    """Smooths the outline and the muscle boundaries."""
+    s = [sigma_mm / z for z in zooms]
+    keep = _gaussian(labels > 0, s) >= 0.5
+    stack = np.stack([_gaussian(labels == k, s) for k in LABELS], axis=-1)
     win = np.argmax(stack, axis=-1) + 1
-    out = np.zeros_like(labels)
-    out[fg] = win[fg].astype(labels.dtype)
-    return out
+    return np.where(keep, win, 0).astype(labels.dtype)
 
 
-def _gaussian(mask, sigma):
+def _gaussian(mask, sigmas):
     x = mask.astype(np.float64)
-    radius = max(1, int(4.0 * sigma + 0.5))
-    r = np.arange(-radius, radius + 1)
-    kern = np.exp(-(r * r) / (2 * sigma * sigma))
-    kern /= kern.sum()
-    for axis in range(3):
-        x = _conv1d_reflect(x, kern, axis)
+    for axis, sigma in enumerate(sigmas):
+        radius = max(1, int(4.0 * sigma + 0.5))
+        r = np.arange(-radius, radius + 1)
+        kern = np.exp(-(r * r) / (2 * sigma * sigma))
+        x = _conv1d_reflect(x, kern / kern.sum(), axis)
     return x
 
 
 def _conv1d_reflect(x, kern, axis):
     x = np.moveaxis(x, axis, -1)
     pad = len(kern) // 2
-    xp = np.pad(x, [(0, 0)] * (x.ndim - 1) + [(pad, pad)], mode="reflect")
+    xp = np.pad(x, [(0, 0)] * (x.ndim - 1) + [(pad, pad)], mode="symmetric")
     out = np.zeros_like(x)
     for i, w in enumerate(kern):
         out += w * xp[..., i:i + x.shape[-1]]
@@ -291,8 +316,121 @@ def _conv1d_reflect(x, kern, axis):
 
 # --- pipeline --------------------------------------------------------------
 
-def run_pipeline(labels, image, zooms, steps):
-    """Apply the selected steps in order. ``steps`` is a dict of booleans/values."""
+def dilate6(mask):
+    """6-connected binary dilation; nothing outside the volume."""
+    out = mask.copy()
+    out[:-1] |= mask[1:]; out[1:] |= mask[:-1]
+    out[:, :-1] |= mask[:, 1:]; out[:, 1:] |= mask[:, :-1]
+    out[:, :, :-1] |= mask[:, :, 1:]; out[:, :, 1:] |= mask[:, :, :-1]
+    return out
+
+
+def reach(seed, allowed):
+    """Voxels of `allowed` 6-connected to `seed` (seed inside allowed)."""
+    out = seed & allowed
+    while True:
+        grown = dilate6(out) & allowed
+        if (grown == out).all():
+            return out
+        out = grown
+
+
+def dark_cut(labels, image, k=3.0):
+    """Removes thick dark tongue that joins the outside."""
+    fg = labels > 0
+    dark = dilate6(dilate6(erode6(erode6(fg & (image < muscle_band(image, fg, True, k)[0])))))
+    cut = dark & reach(~fg, dark | ~fg)
+    return np.where(cut, 0, labels).astype(labels.dtype)
+
+
+def genio_rules(labels, zooms):
+    """Removes genioglossus at the side or top of the tongue, or far in front of vertical or superior longitudinal."""
+    gg = labels == GENIO
+    if not gg.any():
+        return labels
+    fg = labels > 0
+    x, y, z = np.indices(labels.shape)
+    mid = np.median(np.nonzero(fg)[0])
+
+    def extent(mask, coord, axes, high):
+        e = np.where(mask, coord, -np.inf if high else np.inf)
+        e = e.max(axis=axes) if high else e.min(axis=axes)
+        return np.where(np.isfinite(e), e, np.nan)
+
+    with np.errstate(invalid="ignore"):
+        right, left = extent(fg & ~gg & (x >= mid), x, (0, 2), True), extent(fg & ~gg & (x < mid), x, (0, 2), False)
+        bad = (x >= mid) & ((x - right[None, :, None]) * zooms[0] > 0.5)
+        bad |= (x < mid) & ((left[None, :, None] - x) * zooms[0] > 0.5)
+        bad |= z > extent(labels == VERTICAL, z, (0, 2), True)[None, :, None]
+        bad |= (y - extent(labels == VERTICAL, y, (1, 2), True)[:, None, None]) * zooms[1] > 4.0
+        bad |= (y - extent(labels == SUPLONG, y, (1, 2), True)[:, None, None]) * zooms[1] > 11.0
+    bad &= gg
+    if not bad.any():
+        return labels
+    out = np.where(bad, 0, labels).astype(labels.dtype)
+    edge = np.zeros(labels.shape, bool)
+    edge[[0, -1]], edge[:, [0, -1]], edge[:, :, [0, -1]] = True, True, True
+    enclosed = bad & ~reach(edge, out == 0)
+    return fill_nearest(out, enclosed) if enclosed.any() else out
+
+
+def shave_side(labels):
+    """The outermost side voxel of vertical and superior longitudinal (background next to it left or right) goes."""
+    fg = labels > 0
+    side = np.zeros_like(fg)
+    side[1:-1] = fg[1:-1] & (~fg[:-2] | ~fg[2:])
+    return np.where(side & np.isin(labels, (VERTICAL, SUPLONG)), 0, labels).astype(labels.dtype)
+
+
+def mirror_cut(labels, zooms, affine, point, normal, tongue_prob, dist_mm=2.0, prob=0.9999):
+    """Removes vertical with no mirror partner across the midline plane where the tongue probability is low."""
+    n = np.asarray(normal, float) / np.linalg.norm(normal)
+    w = world_coords(labels > 0, affine)
+    wm = w - 2 * ((w - np.asarray(point, float)) @ n)[:, None] * n
+    v = np.rint((wm - affine[:3, 3]) @ np.linalg.inv(affine[:3, :3]).T).astype(int)
+    v = v[np.all((v >= 0) & (v < labels.shape), 1)]
+    mir = np.zeros(labels.shape, bool)
+    mir[tuple(v.T)] = True
+    far = edt(~erode6(dilate6(mir)), zooms) > dist_mm
+    unsure = np.asarray(tongue_prob, np.float64) < prob
+    return np.where((labels == VERTICAL) & far & unsure, 0, labels).astype(labels.dtype)
+
+
+def move_rotation(deg):
+    """Rotation for [pitch, yaw, roll] in degrees (R = Rz Ry Rx), rounded to 1e-12."""
+    p, y, r = (a * math.pi / 180 for a in deg)
+    cp, sp, cy, sy, cr, sr = math.cos(p), math.sin(p), math.cos(y), math.sin(y), math.cos(r), math.sin(r)
+    R = [[cy * cr, cy * sr * sp - sy * cp, cy * sr * cp + sy * sp],
+         [sy * cr, sy * sr * sp + cy * cp, sy * sr * cp - cy * sp],
+         [-sr, cr * sp, cr * cp]]
+    return [[round(v * 1e12) / 1e12 for v in row] for row in R]
+
+
+def tongue_centre(labels, zooms):
+    idx = np.argwhere(labels > 0)
+    return [float(idx[:, a].sum()) / len(idx) * float(zooms[a]) for a in range(3)]
+
+
+def move_volumes(arrays, zooms, R, t, c):
+    """Moves the arrays rigidly, nearest neighbour; arrays may be None."""
+    shape, z = arrays[0].shape, [float(v) for v in zooms]
+    g = np.meshgrid(*(np.arange(n) for n in shape), indexing="ij")
+    d = [g[a] * z[a] - c[a] - t[a] for a in range(3)]
+    src = [np.floor((R[0][a] * d[0] + R[1][a] * d[1] + R[2][a] * d[2] + c[a]) / z[a] + 0.5).astype(np.int64) for a in range(3)]
+    ok = np.all([(s >= 0) & (s < n) for s, n in zip(src, shape)], axis=0)
+    s = tuple(v[ok] for v in src)
+    out = [None if a is None else np.zeros_like(a) for a in arrays]
+    for o, a in zip(out, arrays):
+        if o is not None:
+            o[ok] = a[s]
+    return out
+
+
+def run_pipeline(labels, image, zooms, steps, tongue_prob=None, mirror=None):
+    """Applies the selected steps in order, after any move."""
+    mm, deg = steps.get("move_mm", [0, 0, 0]), steps.get("move_deg", [0, 0, 0])
+    if (any(mm) or any(deg)) and (labels > 0).any():
+        labels, tongue_prob = move_volumes([labels, tongue_prob], zooms, move_rotation(deg), mm, tongue_centre(labels, zooms))
     out = labels.copy()
     if steps.get("thin"):
         out = thin_suplong(out, zooms, steps.get("keep_frac", 0.88))
@@ -300,17 +438,31 @@ def run_pipeline(labels, image, zooms, steps):
         out = suplong_inferior_clip(out)
     if steps.get("sl_cap"):
         out = sl_cap(out)
-    pre = out.copy()
-    if steps.get("surface_trim"):
-        lo, hi = tissue_band(image, out, steps.get("trim_k", 1.5))
-        which = LABELS if steps.get("trim_all", True) else (SUPLONG,)
-        out = surface_trim(out, image, lo, hi, which=which)
+    pre, k = out.copy(), steps.get("trim_sd", 2.0)
+    if steps.get("sl_trim"):
+        out = surface_trim(out, image, *muscle_band(image, out, SUPLONG, k), iters=steps["sl_trim"], which=(SUPLONG,))
     if steps.get("follow_dorsum"):
         out = follow_dorsum(pre, out)
-    if steps.get("clean"):
-        out = clean_labels(out, zooms)
+    if steps.get("il_trim"):
+        out = surface_trim(out, image, *muscle_band(image, out, INFLONG, k), iters=steps["il_trim"], which=(INFLONG,))
+    if steps.get("order"):
+        out = order_inflong(out)
+    if steps.get("dark_sd"):
+        out = dark_cut(out, image, steps["dark_sd"])
+    if steps.get("prob_cut") and tongue_prob is not None:
+        unsure = (out > 0) & (tongue_prob < steps["prob_cut"])
+        out = fill_nearest(np.where(unsure, 0, out), unsure, background=True)
     if steps.get("smooth"):
-        out = smooth_labels(out, steps.get("sigma", 0.8))
+        out = smooth_labels(out, zooms, steps.get("sigma", 1.0))
+    if steps.get("genio"):
+        out = genio_rules(out, zooms)
+    if steps.get("shave"):
+        out = shave_side(out)
+    if steps.get("clean"):
+        out = largest_piece(clean_labels(out, zooms))
+    if steps.get("mirror") and mirror is not None and tongue_prob is not None:
+        out = mirror_cut(out, zooms, mirror["affine"], mirror["point"], mirror["normal"], tongue_prob)
+        out = largest_piece(clean_labels(out, zooms))
     return out
 
 

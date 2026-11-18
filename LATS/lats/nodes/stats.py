@@ -144,24 +144,19 @@ def _aggregate(
         w.writerows(records)
 
     # longitudinal.csv
-    # Change relative to tp00, by both routes.
+    # Change from tp00 comes from the Jacobian; seg_volume_mm3 is each session's label volume.
     long_path = od / "longitudinal.csv"
     long_fields = [
         "timepoint", "subject_id", "label_id", "label",
-        "seg_volume_mm3", "seg_pct_change", "jac_volume_mm3", "jac_pct_change",
+        "seg_volume_mm3", "jac_volume_mm3", "jac_pct_change",
         "mean_logjac", "logjac_pct_change",
     ]
-    baseline_seg = {r["label_id"]: float(r["seg_volume_mm3"])
-                    for r in records if r["timepoint"] == 0}
     baseline_jac = {r["label_id"]: float(r["jac_volume_mm3"])
                     for r in records if r["timepoint"] == 0 and r["jac_volume_mm3"]}
 
     long_records = []
     for r in records:
         lid = r["label_id"]
-        seg_v = float(r["seg_volume_mm3"])
-        b_seg = baseline_seg.get(lid)
-        seg_pct = 100.0 * (seg_v - b_seg) / b_seg if b_seg else None
         jac_v = float(r["jac_volume_mm3"]) if r["jac_volume_mm3"] else None
         b_jac = baseline_jac.get(lid)
         jac_pct = (100.0 * (jac_v - b_jac) / b_jac
@@ -175,7 +170,6 @@ def _aggregate(
             "label_id": lid,
             "label": r["label"],
             "seg_volume_mm3": r["seg_volume_mm3"],
-            "seg_pct_change": f"{seg_pct:.4f}" if seg_pct is not None else "",
             "jac_volume_mm3": r["jac_volume_mm3"],
             "jac_pct_change": f"{jac_pct:.4f}" if jac_pct is not None else "",
             "mean_logjac": r["mean_logjac"],

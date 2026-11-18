@@ -6,6 +6,7 @@ import dataclasses
 import json
 import logging
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -63,18 +64,19 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="N4 bias-field correction on each session before "
                           "registration to the template")
     pre.add_argument("--denoise", action="store_true",
-                     help="DenoiseImage (Rician) on each session, after N4")
+                     help="DenoiseImage (Rician) on each session, after N4 (off by default: "
+                          "the segmenter was trained on images that were not denoised)")
     pre.add_argument("--no-crop-n4", action="store_true",
                      help="disable the second, tongue-local N4 on the crop "
                           "(on by default)")
-    pre.add_argument("--no-crop-denoise", action="store_true",
-                     help="disable denoising the crop (on by default)")
+    pre.add_argument("--crop-denoise", action="store_true",
+                     help="also denoise the crop and QC image (off by default, as --denoise)")
     pre.add_argument("--isotropic-mm", type=float, default=1.0,
                      help="resample the crop and QC image to this isotropic mm "
                           "(default 1.0; 0 disables)")
     pre.add_argument("--no-qc-preproc", action="store_true",
                      help="QC/native image stays raw instead of being re-preprocessed "
-                          "(whole+local N4, denoise, isotropic; on by default)")
+                          "(whole+local N4, isotropic; on by default)")
 
     reg = p.add_argument_group("registration")
     reg.add_argument("--reg-transform", default="s",
@@ -84,6 +86,23 @@ def _build_parser() -> argparse.ArgumentParser:
     pri.add_argument("--prior-refine", action="store_true",
                      help="refine the SST segmentation with the probabilistic "
                           "tongue atlas (DL = likelihood, atlas = spatial prior)")
+    pri.add_argument("--no-autofix", dest="autofix", action="store_false",
+                     help="skip the automatic template and session fixes (clip, tongue N4 and intensity "
+                          "trims, smoothing, stray pieces, one connected tongue)")
+    pri.add_argument("--sl-trim-layers", type=int, default=2,
+                     help="superior longitudinal intensity trim depth in voxel layers (default 2; 0 skips it)")
+    pri.add_argument("--il-trim-layers", type=int, default=3,
+                     help="inferior longitudinal intensity trim depth in voxel layers (default 3; 0 skips it)")
+    pri.add_argument("--trim-sd", type=float, default=2.0,
+                     help="each trim keeps voxels within this many robust SDs of its muscle's interior (default 2)")
+    pri.add_argument("--prob-cut", type=float, default=0.99,
+                     help="drop template tongue whose tongue probability (1 - background) is below this (default 0.99; "
+                          "0 turns it off). Needs a segmenter that supports --save-probs")
+    pri.add_argument("--dark-sd", type=float, default=3.0,
+                     help="remove thick dark tongue joined to the outside, below the tongue median minus this many robust "
+                          "SDs (default 3; 0 turns it off)")
+    pri.add_argument("--no-side-shave", dest="side_shave", action="store_false",
+                     help="keep the outermost side voxel of vertical and superior longitudinal (removed by default)")
     pri.add_argument("--atlas-dir", type=Path,
                      default=(Path(os.environ["LATS_ATLAS_DIR"])
                               if os.environ.get("LATS_ATLAS_DIR") else None),
@@ -119,7 +138,8 @@ def _build_parser() -> argparse.ArgumentParser:
     qa.add_argument("--qa-labels", type=Path, default=None,
                     help="corrected template labels from the QA app (derivatives/lats-qa); re-applies them to the "
                          "sessions of the finished run in -o, reusing its template and registrations, and uses the "
-                         "midline saved with them. The run's earlier outputs are kept in pre_qa/")
+                         "midline saved with them. The original run's outputs are kept in pre_qa/; a later re-apply "
+                         "replaces the previous re-apply's outputs")
     lat = p.add_argument_group("lateralisation")
     lat.add_argument("--midline-label", type=int, default=4,
                      help="label whose centroid defines the midline "
@@ -139,6 +159,9 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="threads for ANTs and the segmenter")
     exe.add_argument("-b", "--keep-tmp", action="store_true",
                      help="keep the nipype working tree")
+    exe.add_argument("--overwrite", action="store_true",
+                     help="delete an earlier run's outputs in -o first; without it, a full run refuses a folder "
+                          "that holds a finished run")
     exe.add_argument("--no-jacobian", action="store_true",
                      help="skip log-Jacobian volume estimation")
     exe.add_argument("--no-shape", action="store_true",
@@ -180,7 +203,7 @@ def _config_from_args(args) -> LatsConfig:
         n4=args.n4,
         denoise=args.denoise,
         crop_n4=not args.no_crop_n4,
-        crop_denoise=not args.no_crop_denoise,
+        crop_denoise=args.crop_denoise,
         isotropic_mm=args.isotropic_mm,
         qc_preproc=not args.no_qc_preproc,
         reg_transform=args.reg_transform,
@@ -194,6 +217,13 @@ def _config_from_args(args) -> LatsConfig:
         midline_label=args.midline_label,
         midline_mode=args.midline_mode,
         prior_refine=args.prior_refine,
+        autofix=args.autofix,
+        sl_trim_layers=args.sl_trim_layers,
+        il_trim_layers=args.il_trim_layers,
+        trim_sd=args.trim_sd,
+        prob_cut=args.prob_cut,
+        dark_sd=args.dark_sd,
+        side_shave=args.side_shave,
         # absolute, because Nipype runs each node in its own working directory
         atlas_dir=args.atlas_dir.resolve() if args.atlas_dir else None,
         atlas_reg_transform=args.atlas_reg_transform,
@@ -250,6 +280,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     config = _config_from_args(args)
+    if not (args.check_deps or config.qa_labels) and any((config.output_prefix / n).exists() for n in ("qa_applied.json", "pre_qa")):
+        print(f"error: {config.output_prefix} has been through QA (qa_applied.json or pre_qa/); "
+              "write a full run to a new -o", file=sys.stderr)
+        return 1
+    if not (args.check_deps or config.qa_labels or args.overwrite) and (config.output_prefix / "stats" / "volumes.csv").is_file():
+        print(f"error: {config.output_prefix} already holds a finished LATS run; pass --overwrite to delete its "
+              "outputs and run again, or use a new -o", file=sys.stderr)
+        return 1
 
     problems = check_dependencies(config)
     if problems:
@@ -277,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"LATS workflow: {len(wf.list_node_names())} nodes")
         for name in sorted(wf.list_node_names()):
             print(f"  {name}")
-        print(f"\n{config.n_timepoints} timepoints, runtime={config.resolved_runtime()}")
+        print(f"\n{config.n_timepoints} timepoints, runtime={'reuse' if config.qa_labels else config.resolved_runtime()}")
         print(f"template: AMTC2 -k 1 -i {config.template_iterations} "
               f"-t {config.template_transform} -m {config.template_metric}")
         return 0
@@ -285,10 +323,16 @@ def main(argv: list[str] | None = None) -> int:
     if config.qa_labels:
         from .reapply import prepare_reapply
         try:
-            prepare_reapply(config)
+            qa_read = prepare_reapply(config)
         except (OSError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
+    elif args.overwrite:
+        from .utils import paths as P
+        for f in (P.manifest_path, P.labels_path, P.sst_dir, P.labels_dir, P.lateral_labels_dir, P.jacobian_dir, P.stats_dir,
+                  P.qc_dir, P.shape_dir, P.intermediate_dir, P.nipype_base_dir):
+            p = f(config.output_prefix)
+            shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
     config.output_prefix.mkdir(parents=True, exist_ok=True)
     _write_manifest(config)
 
@@ -302,12 +346,17 @@ def main(argv: list[str] | None = None) -> int:
         LOG.error("workflow failed: %s", exc)
         _print_recent_crashes(config)
         return 1
+    from .flags import write_flags
+    write_flags(config)
     if config.qa_labels:
         from .reapply import write_applied
-        write_applied(config)
+        try:
+            write_applied(config, qa_read)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
 
     if not config.keep_tmp:
-        import shutil
         shutil.rmtree(nipype_base_dir(config.output_prefix), ignore_errors=True)
         # AMTC2 scratch only; the SST is already in sst/ and reg/ is kept.
         shutil.rmtree(sst_work_dir(config.output_prefix), ignore_errors=True)

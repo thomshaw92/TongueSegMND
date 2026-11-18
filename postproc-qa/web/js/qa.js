@@ -19,8 +19,9 @@ export const SCALES = {
 };
 
 export const TSV_COLUMNS = ['pass', 'item', 'sub', 'ses', 'status', 'decision', 'exclude_reason',
-  'mri_quality', 'mri_disposition', 'seg_quality_raw', 'seg_quality_final', 'seg_disposition',
-  'touched_up', 'asymmetry_pct', 'midline_mode', 'cap_coverage_pct', 'il_side_ratio', 'gg_offset_mm', 'shape_flags',
+  'mri_quality', 'mri_disposition', 'seg_quality_final', 'seg_disposition', 'options_changed',
+  'touched_up', 'asymmetry_pct', 'midline_mode', 'midline_shift_mm', 'midline_yaw_deg', 'midline_roll_deg',
+  'cap_coverage_pct', 'il_side_ratio', 'gg_offset_mm', 'shape_flags',
   'prior_removed_pct', 'labels', 'rater', 'updated', 'notes'];
 
 // Share of the network's tongue the atlas prior removed (LATS sst/prior_refine.json); the threshold is provisional.
@@ -46,7 +47,8 @@ export function sesOf(imageName) {
   return m ? m[1] : null;
 }
 
-export async function discover(list, readJson) {
+// sha256(parts) gives a file's hex digest, or null if it is missing.
+export async function discover(list, readJson, sha256) {
   const items = [];
   for (const kind of ['longitudinal', 'cross-sectional']) {
     for (const run of (await list([...LATS_DIR, kind])).filter(e => e.kind === 'directory' && e.name.startsWith('sub-')).map(e => e.name).sort()) {
@@ -58,21 +60,31 @@ export async function discover(list, readJson) {
       const qaFolder = [...QA_DIR, sub, ...(ses ? [ses] : []), 'anat'];
       const pre = (await list([...base, 'pre_qa'])).map(e => e.name);
       const labels = templateLabelsName(sub, ses), prior = sst.includes('prior_refine.json') ? [...base, 'sst', 'prior_refine.json'] : null;
-      items.push({ pass: 'template', id: run, sub, ses: ses || null, image: [...base, 'sst', 'T_template0.nii.gz'], prior,
+      const flags = (await list([...base, 'qc'])).some(e => e.name === 'flags.json') ? [...base, 'qc', 'flags.json'] : null;
+      const prob = sst.includes('sst_seg_tongue_prob.nii.gz') ? [...base, 'sst', 'sst_seg_tongue_prob.nii.gz'] : null;
+      const template = { pass: 'template', id: run, sub, ses: ses || null, image: [...base, 'sst', 'T_template0.nii.gz'], prior, flags, prob,
+        fixImage: sst.includes('T_template0_tongueN4.nii.gz') ? [...base, 'sst', 'T_template0_tongueN4.nii.gz'] : null,
         labelsIn: [...base, 'sst', seg],
         midline: pre.includes('midline.json') ? [...base, 'pre_qa', 'midline.json'] : sst.includes('midline.json') ? [...base, 'sst', 'midline.json'] : null,
-        qaFolder, labels, sidecar: sidecarName(labels) });
+        qaFolder, labels, sidecar: sidecarName(labels), sessions: [] };
+      items.push(template);
       const runInfo = await readJson([...base, 'lats_run.json']);
-      const applied = (await list(base)).some(e => e.name === 'qa_applied.json');
+      // Sessions open only while qa_applied.json matches the QA labels and record on disk.
+      const done = await readJson([...base, 'qa_applied.json']);
+      const applied = !!done && done.sha256 === await sha256([...qaFolder, labels])
+        && done.sidecar_sha256 === await sha256([...qaFolder, sidecarName(labels)]);
+      const appliedSha = applied ? `${done.sha256} ${done.sidecar_sha256}` : null;
       for (const tp of (runInfo && runInfo.timepoints) || []) {
         const imageName = String(tp.image).split('/').pop();
         const tses = sesOf(imageName);
         if (!tses) continue;
         const single = kind === 'cross-sectional';
         const sLabels = labelsName(imageName, single ? 'qasingle' : 'qa');
-        items.push({ pass: 'session', id: `${sub}_${tses}${single ? '_single' : ''}`, sub, ses: tses, image: [sub, tses, 'anat', imageName],
-          labelsIn: [...base, 'labels', `tp${String(tp.index).padStart(2, '0')}.nii.gz`], midline: null, prior,
-          qaFolder: [...QA_DIR, sub, tses, 'anat'], labels: sLabels, sidecar: sidecarName(sLabels), applied });
+        const session = { pass: 'session', id: `${sub}_${tses}${single ? '_single' : ''}`, sub, ses: tses, image: [sub, tses, 'anat', imageName],
+          labelsIn: [...base, 'labels', `tp${String(tp.index).padStart(2, '0')}.nii.gz`], midline: null, prior, flags,
+          qaFolder: [...QA_DIR, sub, tses, 'anat'], labels: sLabels, sidecar: sidecarName(sLabels), applied, appliedSha };
+        items.push(session);
+        template.sessions.push(session);
       }
     }
   }
@@ -82,8 +94,8 @@ export async function discover(list, readJson) {
 export function newRecord(item) {
   return { pass: item.pass, item: item.id, sub: item.sub, ses: item.ses, image: item.image.join('/'),
     labels_in: item.labelsIn.join('/'), status: 'to do', decision: null, exclude_reason: null,
-    mri_quality: null, seg_quality_raw: null, seg_quality_final: null, touched_up: false,
-    steps: null, midline: null, asymmetry_pct: null, labels: null, notes: '', rater: null, updated: null, history: [] };
+    mri_quality: null, seg_quality_final: null, options_changed: null, touched_up: false,
+    steps: null, midline: null, asymmetry_pct: null, labels: null, applied_sha256: null, notes: '', rater: null, updated: null, history: [] };
 }
 
 export function touch(record, rater, action, now = new Date()) {
@@ -96,9 +108,8 @@ export function disposition(scale, grade) {
 }
 
 export function tsvRow(r) {
-  const v = { ...r, mri_disposition: disposition('mri', r.mri_quality),
-    seg_disposition: disposition('seg', r.seg_quality_final || r.seg_quality_raw),
-    midline_mode: r.midline ? r.midline.mode : '' };
+  const v = { ...r, mri_disposition: disposition('mri', r.mri_quality), seg_disposition: disposition('seg', r.seg_quality_final),
+    midline_mode: r.midline?.mode, midline_shift_mm: r.midline?.shift_mm, midline_yaw_deg: r.midline?.yaw_deg, midline_roll_deg: r.midline?.roll_deg };
   return TSV_COLUMNS.map(c => (v[c] === null || v[c] === undefined || v[c] === '' ? 'n/a' : String(v[c]).replace(/[\t\n\r]+/g, ' '))).join('\t');
 }
 

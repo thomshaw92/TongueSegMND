@@ -35,16 +35,36 @@ test('tools: paint, erase, one-layer erode and dilate', () => {
   const dims = [9, 9, 9], [, ny, nz] = dims, at = (x, y, z) => (x * ny + y) * nz + z, all = [...Array(9 ** 3).keys()];
   const cube = () => { const L = new Int32Array(9 ** 3); for (let x = 2; x < 7; x++) for (let y = 2; y < 7; y++) for (let z = 2; z < 7; z++) L[at(x, y, z)] = x < 4 ? 2 : 1; return L; };
   let L = cube();
-  applyTool(L, dims, [at(4, 4, 4)], 'paint', 3); assert.strictEqual(L[at(4, 4, 4)], 3);
-  applyTool(L, dims, [at(4, 4, 4)], 'erase', 3); assert.strictEqual(L[at(4, 4, 4)], 0);
+  applyTool(L, dims, [at(4, 4, 4)], 'paint', [3]); assert.strictEqual(L[at(4, 4, 4)], 3);
+  applyTool(L, dims, [at(4, 4, 4)], 'erase', [3]); assert.strictEqual(L[at(4, 4, 4)], 0);
   L = cube();
-  const er = applyTool(L, dims, all, 'erode', 1), n1 = cube().filter(v => v === 1).length;
-  assert.ok(er.length > 0 && er.every(([, from]) => from === 1), 'only muscle 1 changes');
+  const er = applyTool(L, dims, all, 'erode', [1]), n1 = cube().filter(v => v === 1).length;
+  assert.ok(er.length > 0 && er.every(([, from, to]) => from === 1 && to === 0), 'only muscle 1 changes, to background');
   assert.strictEqual(L[at(5, 4, 4)], 1, 'interior kept: one layer per pass');
+  assert.strictEqual(L[at(4, 4, 4)], 1, 'the boundary with muscle 2 stays');
   assert.strictEqual(L[at(6, 4, 4)], 0, 'outer surface goes to background');
   assert.ok(L.filter(v => v === 1).length < n1);
   L = cube();
-  const di = applyTool(L, dims, all, 'dilate', 1);
-  assert.ok(di.every(([, from, to]) => from === 2 && to === 1), 'grows only into the other muscle, never background');
-  assert.strictEqual(L[at(3, 4, 4)], 1); assert.strictEqual(L[at(2, 4, 4)], 2, 'one layer');
+  const di = applyTool(L, dims, all, 'dilate', [1]);
+  assert.ok(di.length > 0 && di.every(([, from, to]) => from === 0 && to === 1), 'grows only into background');
+  assert.strictEqual(L[at(3, 4, 4)], 2, 'the other muscle stays');
+  assert.strictEqual(L[at(7, 4, 4)], 1); assert.strictEqual(L[at(8, 4, 4)], 0, 'one layer');
+  L = cube();
+  const both = applyTool(L, dims, all, 'erode', [1, 2]);
+  assert.ok(both.some(([, f]) => f === 1) && both.some(([, f]) => f === 2) && both.every(([, , to]) => to === 0), 'erodes both chosen muscles');
+  assert.deepStrictEqual([L[at(3, 4, 4)], L[at(4, 4, 4)]], [2, 1], 'the boundary between them stays');
+  for (const tool of ['erode', 'dilate']) {
+    const once = cube(), twice = cube(), ref = cube();
+    applyTool(once, dims, all, tool, [1]);
+    applyTool(twice, dims, all, tool, [1], ref); applyTool(twice, dims, all, tool, [1], ref);
+    assert.deepStrictEqual(twice, once, `${tool}: passes decided from the stroke's start do one layer in all`);
+  }
+});
+
+test('dilate with several muscles: contested background goes to the one with more voxels next to it', () => {
+  const dims = [3, 3, 3], at = (x, y, z) => (x * 3 + y) * 3 + z, c = at(1, 1, 1), L = new Int32Array(27);
+  L[at(0, 1, 1)] = 1; L[at(2, 1, 1)] = 2; L[at(1, 0, 1)] = 2;
+  applyTool(L, dims, [c], 'dilate', [1, 2]); assert.strictEqual(L[c], 2, 'two neighbours of 2 beat one of 1');
+  L[c] = 0; applyTool(L, dims, [c], 'dilate', [1]); assert.strictEqual(L[c], 1, 'an unchosen muscle never wins');
+  L[c] = 0; L[at(1, 0, 1)] = 0; applyTool(L, dims, [c], 'dilate', [1, 2]); assert.strictEqual(L[c], 1, 'tie: the first chosen');
 });

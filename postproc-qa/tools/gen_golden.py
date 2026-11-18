@@ -73,7 +73,43 @@ dump("thin", R.thin_suplong(L, ZOOMS, 0.88))
 dump("inferior_clip", R.suplong_inferior_clip(L))
 dump("surface_trim", R.surface_trim(L, img, lo, hi))
 dump("clean", R.clean_labels(L, ZOOMS))
-dump("smooth", R.smooth_labels(L, 0.8))
+dump("smooth", R.smooth_labels(L, ZOOMS, 1.0))
+json.dump({k: list(R.muscle_band(img, L, k, 2.0)) for k in (R.SUPLONG, R.INFLONG)}, open(os.path.join(OUT, "muscle_band.json"), "w"))
+O = L.copy()
+O[(O == R.SUPLONG) & (np.arange(NX)[:, None, None] < 6)] = R.INFLONG
+dump("order_label", O)
+I2 = img.copy()
+I2[(L == R.INFLONG) & ~R.erode6(L > 0)] *= 0.5
+dump("il_image", I2)
+dump("il_trim", R.surface_trim(L, I2, *R.muscle_band(I2, L, R.INFLONG, 2.0), iters=3, which=(R.INFLONG,)))
+dump("order_inflong", R.order_inflong(O))
+G = L.copy()
+G[0:2, 10:14, 6:12] = R.GENIO
+G[10:12, 12:14, 18:20] = R.GENIO
+dump("genio_label", G)
+dump("genio_rules", R.genio_rules(G, ZOOMS))
+assert (R.genio_rules(G, ZOOMS) != G).any() and (R.genio_rules(L, ZOOMS) == L).all()
+B = np.zeros((6, 32, 8), dtype=np.int32)
+B[0:3, 2:28, 4:7], B[0:3, 2:13, 7], B[0:3, 2:32, 1:4] = R.VERTICAL, R.SUPLONG, R.GENIO
+B[3:6, 2:10, 4:7], B[3:6, 2:31, 7], B[3:6, 2:21, 1:4] = R.VERTICAL, R.SUPLONG, R.GENIO
+dump("genio_front_label", B)
+dump("genio_front", R.genio_rules(B, ZOOMS))
+gf = R.genio_rules(B, ZOOMS)
+assert (gf[0:3] != B[0:3]).any() and (gf[3:6] != B[3:6]).any(), "both front rules act"
+gd = np.indices((24, 24, 28))
+DL = np.where(((gd - 12) ** 2).sum(0) <= 81, 1, 0).astype(np.int32)
+DL[9:15, 8:16, 20:27] = R.SUPLONG
+DI = np.where(DL > 0, 100.0, 5.0) + rng.normal(0, 5, DL.shape)
+DI[9:15, 8:16, 21:27] = 20.0
+dump("dark_label", DL); dump("dark_image", DI)
+dc = R.dark_cut(DL, DI, 3.0)
+dump("dark_cut", dc)
+assert (dc[9:15, 8:16, 21:27] == 0).mean() > 0.3 and (dc[DL == 1] == 1).mean() > 0.99, "the cut acts on the lump, ball kept"
+TP = np.where(L > 0, 1.0, 0.0)
+TP[(L > 0) & (np.arange(NX)[:, None, None] < 7)] = 0.5
+dump("tongue_prob", TP)
+dump("shave_side", R.shave_side(L))
+assert (R.shave_side(L) != L).any()
 post = L.copy()
 post[:, :, int(cz) + 6:] = 0
 dump("follow_post", post)
@@ -87,8 +123,18 @@ C[8:10, 16:18, 14:17] = R.VERTICAL
 dump("cap_label", C)
 dump("sl_cap", R.sl_cap(C))
 dump("pipeline_gentle", R.run_pipeline(L, img, ZOOMS, {
-    "thin": True, "inferior_clip": True, "sl_cap": True, "surface_trim": True, "trim_all": False,
-    "clean": True, "follow_dorsum": True, "smooth": True}))
+    "thin": True, "inferior_clip": True, "sl_cap": True, "sl_trim": 2, "il_trim": 3, "trim_sd": 2.0,
+    "follow_dorsum": True, "order": True, "smooth": True, "sigma": 1.0, "genio": True, "clean": True}))
+cuts = R.run_pipeline(L, img, ZOOMS, {"inferior_clip": True, "sl_trim": 2, "il_trim": 3, "trim_sd": 2.0, "follow_dorsum": True,
+                                     "order": True, "dark_sd": 3.0, "prob_cut": 0.99, "smooth": True, "sigma": 1.0, "genio": True, "shave": True, "clean": True}, TP)
+dump("pipeline_cuts", cuts)
+MV = {"move_mm": [1, -2, 1], "move_deg": [3, -4, 2]}
+moved, moved_p = R.move_volumes([L, TP], ZOOMS, R.move_rotation(MV["move_deg"]), MV["move_mm"], R.tongue_centre(L, ZOOMS))
+dump("move_label", moved)
+dump("move_prob", moved_p)
+dump("pipeline_move", R.run_pipeline(L, img, ZOOMS, {"inferior_clip": True, "sl_trim": 2, "il_trim": 3, "trim_sd": 2.0, "follow_dorsum": True,
+     "order": True, "dark_sd": 3.0, "prob_cut": 0.99, "smooth": True, "sigma": 1.0, "genio": True, "shave": True, "clean": True, **MV}, TP))
+assert ((cuts > 0) & (np.arange(NX)[:, None, None] < 7)).sum() < ((L > 0) & (np.arange(NX)[:, None, None] < 7)).sum() / 2, "unsure side cut"
 
 # midline: an elongated, rotated tongue-like ellipsoid with an off-centre genioglossus core
 ia, ja, ka = np.meshgrid(np.arange(NX), np.arange(NY), np.arange(NZ), indexing="ij")
@@ -109,6 +155,20 @@ for mode in ("gg", "tilt"):
     res[mode] = {"point": p.tolist(), "normal": n.tolist(), "counts": R.lateral_counts(M, AFF, p, n),
                  "adj_point": pa.tolist(), "adj_normal": na.tolist(), "adj_counts": R.lateral_counts(M, AFF, pa, na)}
 json.dump(res, open(os.path.join(OUT, "midline.json"), "w"))
+
+# mirror cut: an unsure vertical lump below one side of the phantom
+L2, TP2 = L.copy(), np.ones(L.shape, np.float32)
+L2[15:19, 11:15, 2:7] = R.VERTICAL
+TP2[15:19, 11:15, 2:7] = 0.99
+TP2[15:19, 11:15, 2] = 0.9999
+L2[15:19, 3:6, 2:5] = R.VERTICAL
+plane = {"affine": AFF.tolist(), "point": (AFF[:3, :3] @ [11, 0, 0] + AFF[:3, 3]).tolist(), "normal": (AFF[:3, 0] / ZOOMS[0]).tolist()}
+mc = R.mirror_cut(L2, ZOOMS, AFF, plane["point"], plane["normal"], TP2)
+assert (mc != L2).any() and ((mc != L2) <= ((L2 == R.VERTICAL) & (TP2 < 1))).all(), "only the unsure lump is cut"
+assert (mc[15:19, 11:15, 2] == 0).all() and (mc[15:19, 11:15, 6] != 0).any() and (mc[15:19, 3:6, 2:5] == R.VERTICAL).all() and (mc[L == R.VERTICAL] == R.VERTICAL).all()
+dump("mirror_label", L2); dump("mirror_prob", TP2); dump("mirror_cut", mc)
+dump("pipeline_mirror", R.run_pipeline(L2, img, ZOOMS, {"shave": True, "clean": True, "mirror": True}, TP2, {**plane, "affine": AFF}))
+json.dump(plane, open(os.path.join(OUT, "mirror_plane.json"), "w"))
 
 print("golden written to", OUT)
 print("phantom:", (NX, NY, NZ), "labels present:", sorted(np.unique(L).tolist()))

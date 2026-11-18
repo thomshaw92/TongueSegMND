@@ -195,7 +195,7 @@ def _segment_cropped(
     seg_probs = out_dir / "seg_template_probs.nii.gz"
     if save_probs:
         if not seg_probs.is_file():
-            raise RuntimeError(f"--prior-probs: the segmenter wrote no {seg_probs.name} in {out_dir}")
+            raise RuntimeError(f"--prior-probs or --prob-cut: the segmenter wrote no {seg_probs.name} in {out_dir}")
         probs_dest = sd / "sst_seg_probs.nii.gz"
         _run(["antsApplyTransforms", "-d", "3", "-e", "3", "-i", str(seg_probs),
               "-r", str(template), "-o", str(probs_dest), "-n", "Linear"],
@@ -227,5 +227,5 @@ def build_segment(config: LatsConfig) -> pe.Node:
     node.inputs.threads = config.n_procs
     node.inputs.segmenter_dir = str(sst_segmenter_dir(config.output_prefix))
     node.inputs.sst_out_dir = str(sst_dir(config.output_prefix))
-    node.inputs.save_probs = config.prior_use_probs
+    node.inputs.save_probs = config.prior_use_probs or (config.autofix and config.prob_cut > 0)
     return node
